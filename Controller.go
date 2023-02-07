@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-catupiry/catu"
+	"github.com/go-catupiry/metatags"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -295,7 +296,9 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	}
 
 	ctx.Title = "Usuários"
-	ctx.MetaTags.Title = "Usuários no Monitor do Mercado"
+
+	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+	mt.Title = "Usuários"
 
 	var count int64
 	var records []*UserModel
@@ -381,8 +384,9 @@ func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
 	ctx.Title = record.DisplayName
 	ctx.BodyClass = append(ctx.BodyClass, "body-content-findOne")
 
-	ctx.MetaTags.Title = record.DisplayName
-	ctx.MetaTags.Description = record.Biography
+	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+	mt.Title = record.DisplayName
+	mt.Description = record.Biography
 
 	return c.Render(http.StatusOK, "user/findOne", &catu.TemplateCTX{
 		Ctx:    ctx,
