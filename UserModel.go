@@ -431,3 +431,18 @@ func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
 		Table("users").
 		Count(opts.Count).Error
 }
+
+func UserFindOneByEmail(email string, record *UserModel) error {
+	db := catu.GetDefaultDatabaseConnection()
+
+	return db.
+		Where("email = ?", email).
+		First(record).Error
+}
+
+type UserModelOpts struct {
+}
+
+func NewUserModel(opts *UserModelOpts) (*UserModel, error) {
+	return &UserModel{}, nil
+}
