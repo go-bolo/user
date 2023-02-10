@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/go-catupiry/catu"
+	"github.com/go-catupiry/system_settings"
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 )
@@ -38,6 +39,11 @@ func UserSettingsHandler(c echo.Context) error {
 	queryDefaultLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT", "20"))
 	queryMaxLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT_MAX", "50"))
 
+	ss, err := system_settings.FindAllAsMap()
+	if err != nil {
+		return err
+	}
+
 	data := userSettingsJSONResponse{
 		AppName:           cfgs.GetF("SITE_NAME", "App"),
 		Hostname:          ctx.AppOrigin,
@@ -49,7 +55,7 @@ func UserSettingsHandler(c echo.Context) error {
 		Locales:           []string{"pt-br"},
 		Plugins:           []string{},
 		UserPermissions:   make(map[string]bool),
-		SystemSettings:    make(map[string]string),
+		SystemSettings:    ss,
 	}
 
 	if ctx.IsAuthenticated {
@@ -59,6 +65,19 @@ func UserSettingsHandler(c echo.Context) error {
 		AUserLang := ctx.AuthenticatedUser.GetLanguage()
 		if AUserLang != "" {
 			data.ActiveLocale = AUserLang
+		}
+	}
+
+	roles := ctx.GetAuthenticatedRoles()
+
+	for _, roleName := range *roles {
+		role := ctx.App.GetRole(roleName)
+		if role == nil {
+			continue
+		}
+
+		for _, permissionName := range role.Permissions {
+			data.UserPermissions[permissionName] = true
 		}
 	}
 

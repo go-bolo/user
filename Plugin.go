@@ -36,8 +36,14 @@ func (r *Plugin) Init(app catu.App) error {
 func (r *Plugin) BindRoutes(app catu.App) error {
 	logrus.Debug(r.GetName() + " BindRoutes")
 
+	ctl := r.Controller
+
 	router := app.GetRouter()
 	router.GET("/user-settings", UserSettingsHandler)
+
+	aclRouter := app.SetRouterGroup("acl", "/acl")
+	aclRouter.GET("/permission", ctl.GetUserRolesAndPermissions)
+	aclRouter.POST("/user/:userID/roles", ctl.UpdateUserRoles)
 
 	app.SetRouterGroup("user", "/api/user")
 	routerUser := app.GetRouterGroup("user")

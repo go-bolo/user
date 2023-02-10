@@ -9,37 +9,39 @@ import (
 	"github.com/go-catupiry/catu"
 	"github.com/go-catupiry/catu/helpers"
 	"github.com/labstack/echo/v4"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type UserModel struct {
-	ID uint64 `gorm:"primary_key;column:id;" json:"id"`
+	ID uint64 `gorm:"primary_key;column:id;" json:"id" filter:"param:id;type:number"`
 
-	Username string `gorm:"unique;column:username;" json:"username"`
-	Email    string `gorm:"unique;column:email;" json:"email"`
+	Username string `gorm:"unique;column:username;" json:"username" filter:"param:username;type:string"`
+	Email    string `gorm:"unique;column:email;" json:"email" filter:"param:email;type:string"`
 
-	DisplayName string `gorm:"column:displayName;" json:"displayName"`
-	FullName    string `gorm:"column:fullName;" json:"fullName"`
-	Biography   string `gorm:"column:biography;type:TEXT;" json:"biography"`
-	Gender      string `gorm:"column:gender;" json:"gender"`
+	DisplayName string `gorm:"column:displayName;" json:"displayName" filter:"param:displayName;type:string"`
+	FullName    string `gorm:"column:fullName;" json:"fullName" filter:"param:fullName;type:string"`
+	Biography   string `gorm:"column:biography;type:TEXT;" json:"biography" filter:"param:biography;type:string"`
+	Gender      string `gorm:"column:gender;" json:"gender" filter:"param:gender;type:string"`
 
 	Active  bool `gorm:"column:active;" json:"active"`
-	Blocked bool `gorm:"column:blocked;" json:"blocked"`
+	Blocked bool `gorm:"column:blocked;" json:"blocked" filter:"param:blocked;type:bool"`
 
-	Language     string `gorm:"column:language;" json:"language"`
+	Language     string `gorm:"column:language;" json:"language" filter:"param:language;type:string"`
 	ConfirmEmail string `gorm:"column:confirmEmail;" json:"confirmEmail"`
 
 	AcceptTerms bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
-	Birthdate   string `gorm:"column:birthdate;" json:"birthdate"`
-	Phone       string `gorm:"column:phone;" json:"phone"`
+	Birthdate   string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
+	Phone       string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
 
 	Roles     []string `gorm:"-" json:"roles"`
 	RolesText string   `gorm:"column:roles;" json:"-"`
 
-	CreatedAt time.Time `gorm:"column:createdAt;" json:"createdAt"`
-	UpdatedAt time.Time `gorm:"column:updatedAt;" json:"updatedAt"`
+	CreatedAt time.Time `gorm:"column:createdAt;" json:"createdAt" filter:"param:createdAt;type:date"`
+	UpdatedAt time.Time `gorm:"column:updatedAt;" json:"updatedAt" filter:"param:updatedAt;type:date"`
 }
 
 func (r *UserModel) GetID() string {
@@ -58,20 +60,21 @@ func (r *UserModel) SetID(id string) error {
 
 func (r *UserModel) SetRoles(v []string) error {
 	r.Roles = v
+
+	jsonString, _ := json.Marshal(r.Roles)
+	r.RolesText = string(jsonString)
+
 	return nil
 }
 
-func (r *UserModel) AddRole(roleName string) error {
-	roles := r.GetRoles()
-	roles = append(roles, roleName)
+func (r *UserModel) AddRole(role string) error {
+	for i := range r.Roles {
+		if r.Roles[i] == role {
+			return nil
+		}
+	}
 
-	jsonString, _ := json.Marshal(roles)
-	r.RolesText = string(jsonString)
-
-	r.Roles = roles
-
-	rolesByte, _ := json.Marshal(&r.Roles)
-	r.RolesText = string(rolesByte)
+	r.Roles = append(r.Roles, role)
 
 	return nil
 }
@@ -147,6 +150,18 @@ func (r *UserModel) GetRoles() []string {
 	if r.RolesText != "" {
 		_ = json.Unmarshal([]byte(r.RolesText), &r.Roles)
 	}
+
+	return r.Roles
+}
+
+func (r *UserModel) SetRole(roleName string) []string {
+	roles := r.GetRoles()
+	roles = append(roles, roleName)
+
+	jsonString, _ := json.Marshal(roles)
+	r.RolesText = string(jsonString)
+
+	r.Roles = roles
 
 	return r.Roles
 }
@@ -233,8 +248,43 @@ func (m *UserModel) LoadData() error {
 }
 
 func (r *UserModel) Delete() error {
+	if r.ID == 0 {
+		return nil
+	}
 	db := catu.GetDefaultDatabaseConnection()
 	return db.Unscoped().Delete(&r).Error
+}
+
+func (m *UserModel) ValidPassword(password string) (bool, error) {
+	var passwordRecord PasswordModel
+
+	err := FindPasswordByUserID(m.GetID(), &passwordRecord)
+	if err != nil {
+		return false, err
+	}
+
+	isValid, err := passwordRecord.Compare(password)
+	if err != nil && !errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+		return false, err
+	}
+
+	if !isValid {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (m *UserModel) SetPassword(password string) error {
+	return UpdateUserPasswordByUserID(m.GetID(), password)
+}
+
+func CreateUser() {
+
+}
+
+func UpdateUser() {
+
 }
 
 func UsersQuery(userList *[]UserModel, limit int) error {
@@ -252,8 +302,11 @@ func UsersQuery(userList *[]UserModel, limit int) error {
 // FindOne - Find one user record
 func UserFindOne(id string, record *UserModel) error {
 	db := catu.GetDefaultDatabaseConnection()
-
-	return db.First(record, id).Error
+	err := db.First(record, id).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return nil
 }
 
 func UserFindOneByUsername(username string, record *UserModel) error {
@@ -264,14 +317,6 @@ func UserFindOneByUsername(username string, record *UserModel) error {
 			db.Where("username = ?", username).
 				Or(db.Where("email = ?", username)),
 		).
-		First(record).Error
-}
-
-func UserFindOneByEmail(email string, record *UserModel) error {
-	db := catu.GetDefaultDatabaseConnection()
-
-	return db.
-		Where("email = ?", email).
 		First(record).Error
 }
 
@@ -308,6 +353,10 @@ func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
 
 	can := ctx.Can("find_user")
 	if !can {
+		logrus.WithFields(logrus.Fields{
+			"roles": ctx.GetAuthenticatedRoles(),
+		}).Debug("QueryAndCountFromRequest forbidden")
+
 		return nil
 	}
 
@@ -342,7 +391,7 @@ func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
 
 	r := query.Find(opts.Records)
 	if r.Error != nil {
-		return r.Error
+		return errors.Wrap(r.Error, "user.QueryAndCountFromRequest error on find records")
 	}
 
 	return CountQueryFromRequest(opts)
@@ -381,11 +430,4 @@ func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
 	return queryCount.
 		Table("users").
 		Count(opts.Count).Error
-}
-
-type UserModelOpts struct {
-}
-
-func NewUserModel(opts *UserModelOpts) (*UserModel, error) {
-	return &UserModel{}, nil
 }

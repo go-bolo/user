@@ -5,11 +5,14 @@ import (
 	"net/http"
 
 	"github.com/go-catupiry/catu"
+	"github.com/go-catupiry/catu/acl"
 	"github.com/go-catupiry/metatags"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
+
+var userControllerLogPrefix = "user.controller."
 
 type ListJSONResponse struct {
 	catu.BaseListReponse
@@ -35,6 +38,7 @@ type TeaserTPL struct {
 
 // Http user controller | struct with http handlers
 type Controller struct {
+	App catu.App
 }
 
 func (ctl *Controller) Query(c echo.Context) error {
@@ -42,7 +46,7 @@ func (ctl *Controller) Query(c echo.Context) error {
 	ctx := c.(*catu.RequestContext)
 
 	var count int64
-	var records []*UserModel
+	records := []*UserModel{}
 	err = QueryAndCountFromRequest(&QueryAndCountFromRequestCfg{
 		Records: &records,
 		Count:   &count,
@@ -53,7 +57,7 @@ func (ctl *Controller) Query(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug("Query Error on find users")
+		}).Debug(userControllerLogPrefix + "query Error on find users")
 	}
 
 	ctx.Pager.Count = count
@@ -61,7 +65,7 @@ func (ctl *Controller) Query(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"count":             count,
 		"len_records_found": len(records),
-	}).Debug("Query count result")
+	}).Debug(userControllerLogPrefix + "query count result")
 
 	for i := range records {
 		records[i].LoadData()
@@ -77,7 +81,7 @@ func (ctl *Controller) Query(c echo.Context) error {
 }
 
 func (ctl *Controller) Create(c echo.Context) error {
-	logrus.Debug("Controller.Create running")
+	logrus.Debug(userControllerLogPrefix + "create running")
 	var err error
 	ctx := c.(*catu.RequestContext)
 
@@ -107,7 +111,7 @@ func (ctl *Controller) Create(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"body": body,
-	}).Info("Controller.Create params")
+	}).Debug(userControllerLogPrefix + "create params")
 
 	err = record.Save()
 	if err != nil {
@@ -141,7 +145,7 @@ func (ctl *Controller) Count(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug("ContentFindAll Error on find contents")
+		}).Debug(userControllerLogPrefix + "count Error on find contents")
 	}
 
 	ctx.Pager.Count = count
@@ -158,7 +162,7 @@ func (ctl *Controller) FindOne(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug("ContentFindOne id from params")
+	}).Debug(userControllerLogPrefix + "findOne id from params")
 
 	record := UserModel{}
 	err := UserFindOne(id, &record)
@@ -169,18 +173,24 @@ func (ctl *Controller) FindOne(c echo.Context) error {
 	if record.ID == 0 {
 		logrus.WithFields(logrus.Fields{
 			"id": id,
-		}).Debug("FindOneHandler id record not found")
+		}).Debug(userControllerLogPrefix + "findOne id record not found")
 
 		return echo.NotFoundHandler(c)
 	}
 
-	if record.GetID() == ctx.AuthenticatedUser.GetID() {
-		ctx.AuthenticatedUser.AddRole("owner")
+	if ctx.IsAuthenticated {
+		if record.GetID() == ctx.AuthenticatedUser.GetID() {
+			ctx.AuthenticatedUser.AddRole("owner")
+		}
 	}
 
 	can := ctx.Can("find_user")
 	if !can {
-		return echo.NewHTTPError(http.StatusForbidden, "Forbidden")
+		return &catu.HTTPError{
+			Code:     403,
+			Message:  "Forbidden",
+			Internal: errors.New("user.FindOne forbidden"),
+		}
 	}
 
 	record.LoadData()
@@ -202,7 +212,7 @@ func (ctl *Controller) Update(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"id":    id,
 		"roles": ctx.GetAuthenticatedRoles(),
-	}).Debug("user.Controller.Update id from params")
+	}).Debug(userControllerLogPrefix + "update id from params")
 
 	record := UserModel{}
 	err = UserFindOne(id, &record)
@@ -210,8 +220,8 @@ func (ctl *Controller) Update(c echo.Context) error {
 		logrus.WithFields(logrus.Fields{
 			"id":    id,
 			"error": err,
-		}).Debug("user.Controller.Update error on find one")
-		return errors.Wrap(err, "user.Controller.Update error on find one")
+		}).Debug(userControllerLogPrefix + "update error on find one")
+		return errors.Wrap(err, userControllerLogPrefix+"update error on find one")
 	}
 
 	if record.GetID() == ctx.AuthenticatedUser.GetID() {
@@ -230,7 +240,7 @@ func (ctl *Controller) Update(c echo.Context) error {
 		logrus.WithFields(logrus.Fields{
 			"id":    id,
 			"error": err,
-		}).Debug("user.Controller.Update error on bind")
+		}).Debug(userControllerLogPrefix + "update error on bind")
 
 		if _, ok := err.(*echo.HTTPError); ok {
 			return err
@@ -256,7 +266,7 @@ func (ctl *Controller) Delete(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug("user.Controller.Delete id from params")
+	}).Debug(userControllerLogPrefix + "delete id from params")
 
 	ctx := c.(*catu.RequestContext)
 
@@ -292,16 +302,15 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 
 	switch ctx.GetResponseContentType() {
 	case "application/json":
-		return ctl.FindOne(c)
+		return ctl.Query(c)
 	}
 
 	ctx.Title = "Usuários"
-
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = "Usuários"
+	mt.Title = "Usuários no Monitor do Mercado"
 
 	var count int64
-	var records []*UserModel
+	records := []*UserModel{}
 	err = QueryAndCountFromRequest(&QueryAndCountFromRequestCfg{
 		Records: &records,
 		Count:   &count,
@@ -313,7 +322,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug("ContentFindAll Error on find contents")
+		}).Debug(userControllerLogPrefix + "FindAllPageHandler Error on find contents")
 	}
 
 	ctx.Pager.Count = count
@@ -323,7 +332,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"count":             count,
 		"len_records_found": len(records),
-	}).Debug("ContentFindAll count result")
+	}).Debug(userControllerLogPrefix + "FindAllPageHandler count result")
 
 	for i := range records {
 		records[i].LoadTeaserData()
@@ -337,7 +346,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"err": err.Error(),
-			}).Error("controlers.ContentFindAll error on render teaser")
+			}).Error(userControllerLogPrefix + "FindAllPageHandler error on render teaser")
 		} else {
 			teaserList = append(teaserList, teaserHTML.String())
 		}
@@ -364,7 +373,7 @@ func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug("FindOnePageHandler id from params")
+	}).Debug(userControllerLogPrefix + "FindOnePageHandler id from params")
 
 	record := UserModel{}
 	err = UserFindOne(id, &record)
@@ -375,7 +384,7 @@ func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
 	if record.ID == 0 {
 		logrus.WithFields(logrus.Fields{
 			"id": id,
-		}).Debug("FindOnePageHandler id record not found")
+		}).Debug(userControllerLogPrefix + "FindOnePageHandler id record not found")
 		return echo.NotFoundHandler(c)
 	}
 
@@ -394,11 +403,80 @@ func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
 	})
 }
 
+type UserRolesResponse struct {
+	Roles       map[string]acl.Role `json:"roles"`
+	Permissions string              `json:"permissions"`
+}
+
+func (ctl *Controller) GetUserRolesAndPermissions(c echo.Context) error {
+	ctx := c.(*catu.RequestContext)
+	appStruct := ctx.App.(*catu.AppStruct)
+	r := UserRolesResponse{Roles: appStruct.RolesList}
+
+	return c.JSON(http.StatusOK, &r)
+}
+func (ctl *Controller) GetUserRoles(c echo.Context) error {
+	return c.String(http.StatusNotImplemented, "Not implemented")
+}
+
+type UserRolesBodyRequest struct {
+	UserRoles []string `json:"userRoles"`
+}
+
+func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
+	userID := c.Param("userID")
+
+	var user UserModel
+	err := UserFindOne(userID, &user)
+	if err != nil {
+		return err
+	}
+
+	if user.ID == 0 {
+		return &catu.HTTPError{
+			Code:    404,
+			Message: "not found",
+		}
+	}
+
+	body := UserRolesBodyRequest{}
+
+	if err := c.Bind(&body); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Debug("user.UpdateUserRoles error on bind")
+
+		if _, ok := err.(*echo.HTTPError); ok {
+			return err
+		}
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	err = user.SetRoles(body.UserRoles)
+	if err != nil {
+		return err
+	}
+
+	err = user.Save()
+	if err != nil {
+		return errors.Wrap(err, "user.UpdateUserRoles error on save user roles")
+	}
+
+	return c.JSON(http.StatusOK, make(map[string]string))
+}
+
 type ControllerCfg struct {
+	App catu.App
 }
 
 func NewController(cfg *ControllerCfg) *Controller {
-	ctx := Controller{}
+	ctx := Controller{App: cfg.App}
 
 	return &ctx
+}
+
+type RoleTableItem struct {
+	Name    string `json:"name"`
+	Checked bool   `json:"checked"`
+	Role    string `json:"role"`
 }
