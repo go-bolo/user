@@ -8,6 +8,7 @@ import (
 	"github.com/go-catupiry/catu/acl"
 	"github.com/go-catupiry/metatags"
 	"github.com/labstack/echo/v4"
+	gonanoid "github.com/matoous/go-nanoid"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -101,6 +102,13 @@ func (ctl *Controller) Create(c echo.Context) error {
 
 	record := body.Record
 	record.ID = 0
+
+	if record.Username == "" {
+		record.Username, err = gonanoid.Nanoid()
+		if err != nil {
+			return err
+		}
+	}
 
 	if err := c.Validate(record); err != nil {
 		if _, ok := err.(*echo.HTTPError); ok {
