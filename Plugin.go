@@ -1,13 +1,14 @@
 package user
 
 import (
-	"github.com/go-catupiry/catu"
+	"net/http"
+
+	"github.com/go-bolo/bolo"
 	"github.com/gookit/event"
-	"github.com/sirupsen/logrus"
 )
 
 type Plugin struct {
-	catu.Pluginer
+	bolo.Plugin
 	Controller *Controller
 
 	Name string
@@ -17,8 +18,8 @@ func (r *Plugin) GetName() string {
 	return r.Name
 }
 
-func (r *Plugin) Init(app catu.App) error {
-	logrus.Debug(r.GetName() + " Init")
+func (r *Plugin) Init(app bolo.App) error {
+	app.GetLogger().Debug(r.GetName() + " Init")
 
 	r.Controller = NewController(&ControllerCfg{})
 
@@ -33,26 +34,42 @@ func (r *Plugin) Init(app catu.App) error {
 	return nil
 }
 
-func (r *Plugin) BindRoutes(app catu.App) error {
-	logrus.Debug(r.GetName() + " BindRoutes")
+func (r *Plugin) BindRoutes(app bolo.App) error {
+	app.GetLogger().Debug(r.GetName() + " BindRoutes")
 
 	ctl := r.Controller
 
-	router := app.GetRouter()
-	router.GET("/user-settings", UserSettingsHandler)
+	app.SetRoute("urls_query", &bolo.Route{
+		Method:   http.MethodGet,
+		Path:     "/user-settings",
+		Action:   UserSettingsHandler,
+		Template: "urls/find",
+	})
 
-	aclRouter := app.SetRouterGroup("acl", "/acl")
-	aclRouter.GET("/permission", ctl.GetUserRolesAndPermissions)
-	aclRouter.POST("/user/:userID/roles", ctl.UpdateUserRoles)
+	app.SetRoute("get_acl_permissions", &bolo.Route{
+		Method: http.MethodGet,
+		Path:   "/acl/permission",
+		Action: ctl.GetUserRolesAndPermissions,
+	})
 
-	app.SetRouterGroup("user", "/api/user")
-	routerUser := app.GetRouterGroup("user")
-	app.SetResource("user", r.Controller, routerUser)
+	app.SetRoute("get_user_roles", &bolo.Route{
+		Method: http.MethodPost,
+		Path:   "/acl/user/:userID/roles",
+		Action: ctl.UpdateUserRoles,
+	})
+
+	app.SetResource(&bolo.Resource{
+		Name:       "user",
+		Prefix:     "/api/user",
+		Path:       "/user",
+		Controller: r.Controller,
+		Model:      &UserModel{},
+	})
 
 	return nil
 }
 
-func (p *Plugin) setTemplateFunctions(app catu.App) error {
+func (p *Plugin) setTemplateFunctions(app bolo.App) error {
 	app.SetTemplateFunction("renderClientAppConfigs", renderClientAppConfigs)
 	return nil
 }

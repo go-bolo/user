@@ -6,7 +6,8 @@ import (
 	"html/template"
 	"strconv"
 
-	"github.com/go-catupiry/catu"
+	"github.com/go-bolo/bolo"
+	"github.com/labstack/echo/v4"
 )
 
 type HTMLBootstrapConfig struct {
@@ -26,11 +27,10 @@ type HTMLBootstrapConfig struct {
 	ActiveLocale      string               `json:"activeLocale"`
 }
 
-func renderClientAppConfigs(tplCtx catu.TemplateCTX) template.HTML {
-	ctx := tplCtx.Ctx.(*catu.RequestContext)
-	app := catu.GetApp()
-
-	cfgs := catu.GetConfiguration()
+func renderClientAppConfigs(tplCtx bolo.TemplateCTX) template.HTML {
+	c := tplCtx.Ctx.(echo.Context)
+	app := bolo.GetApp(c)
+	cfgs := app.GetConfiguration()
 
 	queryDefaultLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT", "20"))
 	queryMaxLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT_MAX", "50"))
@@ -42,8 +42,8 @@ func renderClientAppConfigs(tplCtx catu.TemplateCTX) template.HTML {
 
 	data := HTMLBootstrapConfig{
 		AppName:           cfgs.GetF("SITE_NAME", "App"),
-		ENV:               ctx.ENV,
-		Hostname:          ctx.AppOrigin,
+		ENV:               app.GetEnv(),
+		Hostname:          bolo.GetBaseURL(c),
 		ActiveLocale:      cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		DefaultLocale:     cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		Date:              clientSideDateFormat{DefaultFormat: "L HH:mm"},
@@ -51,23 +51,23 @@ func renderClientAppConfigs(tplCtx catu.TemplateCTX) template.HTML {
 		QueryMaxLimit:     queryMaxLimit,
 		Locales:           []string{"pt-br"},
 		Plugins:           keys,
-		UserRoles:         *ctx.GetAuthenticatedRoles(),
+		UserRoles:         bolo.GetRoles(c),
 	}
 
-	if ctx.IsAuthenticated {
+	if bolo.IsAuthenticated(c) {
+		user := bolo.GetAuthenticatedUser(c)
 		data.User = make(map[string]string)
-		data.User["id"] = ctx.AuthenticatedUser.GetID()
-		data.User["displayName"] = ctx.AuthenticatedUser.GetDisplayName()
-
+		data.User["id"] = user.GetID()
+		data.User["displayName"] = user.GetDisplayName()
 		// TODO! add all user authenticated data
-		AUserLang := ctx.AuthenticatedUser.GetLanguage()
+		AUserLang := user.GetLanguage()
 		if AUserLang != "" {
 			data.ActiveLocale = AUserLang
 		}
 	}
 
 	for _, role := range data.UserRoles {
-		ctx.BodyClass = append(ctx.BodyClass, "ur-"+role)
+		bolo.AddHTMLBodyClass(c, "ur-"+role)
 	}
 
 	jsonStringData, err := json.Marshal(data)

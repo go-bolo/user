@@ -1,4 +1,4 @@
-# Catupiri user plugin.
+# Go Bolo user plugin.
 
 ## Features
 

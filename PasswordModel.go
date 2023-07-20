@@ -3,7 +3,7 @@ package user
 import (
 	"strconv"
 
-	"github.com/go-catupiry/catu"
+	"github.com/go-bolo/bolo"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 
@@ -70,10 +70,10 @@ func (r *PasswordModel) Generate(password string) ([]byte, error) {
 	return hashedPassword, nil
 }
 
-func (r *PasswordModel) Save() error {
+func (r *PasswordModel) Save(app bolo.App) error {
 	var err error
 
-	db := catu.GetDefaultDatabaseConnection()
+	db := app.GetDB()
 
 	if r.ID == 0 {
 		// create ....
@@ -92,8 +92,8 @@ func (r *PasswordModel) Save() error {
 	return nil
 }
 
-func FindPasswordByUsername(username string, r *PasswordModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func FindPasswordByUsername(app bolo.App, username string, r *PasswordModel) error {
+	db := app.GetDB()
 
 	err := db.
 		Model(&PasswordModel{}).
@@ -112,8 +112,8 @@ func FindPasswordByUsername(username string, r *PasswordModel) error {
 	return nil
 }
 
-func FindPasswordByUserID(userID string, passwordRecord *PasswordModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func FindPasswordByUserID(app bolo.App, userID string, passwordRecord *PasswordModel) error {
+	db := app.GetDB()
 	err := db.Where("userId", userID).
 		First(&passwordRecord).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -122,9 +122,9 @@ func FindPasswordByUserID(userID string, passwordRecord *PasswordModel) error {
 	return nil
 }
 
-func UpdateUserPasswordByUserID(userID string, password string) error {
+func UpdateUserPasswordByUserID(app bolo.App, userID string, password string) error {
 	var record PasswordModel
-	err := FindPasswordByUserID(userID, &record)
+	err := FindPasswordByUserID(app, userID, &record)
 	if err != nil {
 		return err
 	}
@@ -143,5 +143,5 @@ func UpdateUserPasswordByUserID(userID string, password string) error {
 		return err
 	}
 
-	return record.Save()
+	return record.Save(app)
 }

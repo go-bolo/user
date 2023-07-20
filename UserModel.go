@@ -2,15 +2,14 @@ package user
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/go-catupiry/catu"
-	"github.com/go-catupiry/catu/helpers"
+	"github.com/go-bolo/bolo"
+	"github.com/go-bolo/bolo/helpers"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -142,8 +141,8 @@ func (UserModel) TableName() string {
 	return "users"
 }
 
-func (r *UserModel) FillById(id string) error {
-	return UserFindOne(id, r)
+func (r *UserModel) FillById(app bolo.App, id string) error {
+	return UserFindOne(app, id, r)
 }
 
 func (r *UserModel) GetRoles() []string {
@@ -214,9 +213,9 @@ func (r *UserModel) GetUpdateAtString() string {
 	return r.UpdatedAt.UTC().String()
 }
 
-func (m *UserModel) Save() error {
+func (m *UserModel) Save(app bolo.App) error {
 	var err error
-	db := catu.GetDefaultDatabaseConnection()
+	db := app.GetDB()
 
 	if m.ID == 0 {
 		// create ....
@@ -247,18 +246,18 @@ func (m *UserModel) LoadData() error {
 	return nil
 }
 
-func (r *UserModel) Delete() error {
+func (r *UserModel) Delete(app bolo.App) error {
 	if r.ID == 0 {
 		return nil
 	}
-	db := catu.GetDefaultDatabaseConnection()
+	db := app.GetDB()
 	return db.Unscoped().Delete(&r).Error
 }
 
-func (m *UserModel) ValidPassword(password string) (bool, error) {
+func (m *UserModel) ValidPassword(app bolo.App, password string) (bool, error) {
 	var passwordRecord PasswordModel
 
-	err := FindPasswordByUserID(m.GetID(), &passwordRecord)
+	err := FindPasswordByUserID(app, m.GetID(), &passwordRecord)
 	if err != nil {
 		return false, err
 	}
@@ -275,8 +274,8 @@ func (m *UserModel) ValidPassword(password string) (bool, error) {
 	return true, nil
 }
 
-func (m *UserModel) SetPassword(password string) error {
-	return UpdateUserPasswordByUserID(m.GetID(), password)
+func (m *UserModel) SetPassword(app bolo.App, password string) error {
+	return UpdateUserPasswordByUserID(app, m.GetID(), password)
 }
 
 func CreateUser() {
@@ -287,9 +286,8 @@ func UpdateUser() {
 
 }
 
-func UsersQuery(userList *[]UserModel, limit int) error {
-
-	db := catu.GetDefaultDatabaseConnection()
+func UsersQuery(app bolo.App, userList *[]UserModel, limit int) error {
+	db := app.GetDB()
 
 	if err := db.
 		Limit(limit).
@@ -300,8 +298,8 @@ func UsersQuery(userList *[]UserModel, limit int) error {
 }
 
 // FindOne - Find one user record
-func UserFindOne(id string, record *UserModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func UserFindOne(app bolo.App, id string, record *UserModel) error {
+	db := app.GetDB()
 	err := db.First(record, id).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
@@ -309,8 +307,8 @@ func UserFindOne(id string, record *UserModel) error {
 	return nil
 }
 
-func UserFindOneByUsername(username string, record *UserModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func UserFindOneByUsername(app bolo.App, username string, record *UserModel) error {
+	db := app.GetDB()
 
 	return db.
 		Where(
@@ -320,8 +318,8 @@ func UserFindOneByUsername(username string, record *UserModel) error {
 		First(record).Error
 }
 
-func LoadAllUsers(userList *[]UserModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func LoadAllUsers(app bolo.App, userList *[]UserModel) error {
+	db := app.GetDB()
 
 	if err := db.
 		Limit(99999).
@@ -343,28 +341,23 @@ type QueryAndCountFromRequestCfg struct {
 }
 
 func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
-	db := catu.GetDefaultDatabaseConnection()
-
 	c := opts.C
+	app := bolo.GetApp(c)
+	db := app.GetDB()
+	l := bolo.GetLogger(c)
 
 	q := c.QueryParam("q")
 	query := db
-	ctx := c.(*catu.RequestContext)
 
-	can := ctx.Can("find_user")
-	if !can {
-		logrus.WithFields(logrus.Fields{
-			"roles": ctx.GetAuthenticatedRoles(),
-		}).Debug("QueryAndCountFromRequest forbidden")
+	if !bolo.Can(c, "find_user") {
+		l.Debug("QueryAndCountFromRequest forbidden", zap.Any("roles", bolo.GetRoles(c)))
 
 		return nil
 	}
 
-	queryI, err := ctx.Query.SetDatabaseQueryForModel(query, &UserModel{})
+	queryI, err := bolo.GetQueryParser(c).SetDatabaseQueryForModel(query, &UserModel{})
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error": fmt.Sprintf("%+v\n", err),
-		}).Error("QueryAndCountFromRequest error")
+		l.Error("QueryAndCountFromRequest error", zap.Error(err))
 	}
 	query = queryI.(*gorm.DB)
 
@@ -398,11 +391,11 @@ func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
 }
 
 func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
-	db := catu.GetDefaultDatabaseConnection()
-
 	c := opts.C
+	app := bolo.GetApp(c)
+	db := app.GetDB()
+	l := bolo.GetLogger(c)
 	q := c.QueryParam("q")
-	ctx := c.(*catu.RequestContext)
 
 	// Count ...
 	queryCount := db
@@ -414,16 +407,13 @@ func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
 		)
 	}
 
-	can := ctx.Can("find_user")
-	if !can {
+	if !bolo.Can(c, "find_user") {
 		return nil
 	}
 
-	queryICount, err := ctx.Query.SetDatabaseQueryForModel(queryCount, &UserModel{})
+	queryICount, err := bolo.GetQueryParser(c).SetDatabaseQueryForModel(queryCount, &UserModel{})
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error": fmt.Sprintf("%+v\n", err),
-		}).Error("QueryAndCountFromRequest count error")
+		l.Error("QueryAndCountFromRequest count error", zap.Error(err))
 	}
 	queryCount = queryICount.(*gorm.DB)
 
@@ -432,8 +422,8 @@ func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
 		Count(opts.Count).Error
 }
 
-func UserFindOneByEmail(email string, record *UserModel) error {
-	db := catu.GetDefaultDatabaseConnection()
+func UserFindOneByEmail(app bolo.App, email string, record *UserModel) error {
+	db := app.GetDB()
 
 	return db.
 		Where("email = ?", email).
