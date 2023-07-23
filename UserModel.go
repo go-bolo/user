@@ -236,12 +236,12 @@ func (m *UserModel) Save(app bolo.App) error {
 	return nil
 }
 
-func (m *UserModel) LoadTeaserData() error {
+func (m *UserModel) LoadTeaserData(c bolo.Context) error {
 	m.GetRoles()
 	return nil
 }
 
-func (m *UserModel) LoadData() error {
+func (m *UserModel) LoadData(c bolo.Context) error {
 	m.GetRoles()
 	return nil
 }

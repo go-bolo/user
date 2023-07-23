@@ -60,10 +60,8 @@ func (r *Plugin) BindRoutes(app bolo.App) error {
 
 	app.SetResource(&bolo.Resource{
 		Name:       "user",
-		Prefix:     "/api/user",
-		Path:       "/user",
+		Path:       "/api/user",
 		Controller: r.Controller,
-		Model:      &UserModel{},
 	})
 
 	return nil

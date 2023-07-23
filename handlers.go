@@ -29,7 +29,7 @@ type clientSideDateFormat struct {
 	DefaultFormat string `json:"defaultFormat"`
 }
 
-func UserSettingsHandler(c echo.Context) (bolo.Response, error) {
+func UserSettingsHandler(c echo.Context) error {
 	l := bolo.GetLogger(c)
 	l.Debug("user.UserSettingsHandler running")
 	app := bolo.GetApp(c)
@@ -40,7 +40,7 @@ func UserSettingsHandler(c echo.Context) (bolo.Response, error) {
 
 	ss, err := system_settings.FindAllAsMap()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	data := userSettingsJSONResponse{
@@ -80,7 +80,7 @@ func UserSettingsHandler(c echo.Context) (bolo.Response, error) {
 		}
 	}
 
-	return &bolo.DefaultResponse{
+	return bolo.Send(c, &bolo.DefaultResponse{
 		Data: data,
-	}, nil
+	})
 }

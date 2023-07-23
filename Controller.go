@@ -8,7 +8,6 @@ import (
 	"github.com/labstack/echo/v4"
 	gonanoid "github.com/matoous/go-nanoid"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +38,7 @@ type TeaserTPL struct {
 // Http user controller | struct with http handlers
 type Controller struct{}
 
-func (ctl *Controller) Find(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) Find(c echo.Context) error {
 	var err error
 	pager := bolo.GetPager(c)
 	l := bolo.GetLogger(c)
@@ -62,7 +61,7 @@ func (ctl *Controller) Find(c echo.Context) (bolo.Response, error) {
 	l.Debug(userControllerLogPrefix+" query count result", zap.Int64("count", count), zap.Int("len_records_found", len(records)))
 
 	for i := range records {
-		records[i].LoadData()
+		records[i].LoadData(c)
 	}
 
 	resp := ListJSONResponse{
@@ -71,12 +70,10 @@ func (ctl *Controller) Find(c echo.Context) (bolo.Response, error) {
 
 	resp.Meta.Count = count
 
-	return &bolo.DefaultResponse{
-		Data: resp,
-	}, nil
+	return bolo.Send(c, &bolo.DefaultResponse{Data: resp})
 }
 
-func (ctl *Controller) Create(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) Create(c echo.Context) error {
 	l := bolo.GetLogger(c)
 	l.Debug(userControllerLogPrefix + "create running")
 
@@ -85,16 +82,16 @@ func (ctl *Controller) Create(c echo.Context) (bolo.Response, error) {
 
 	can := bolo.Can(c, "create_user")
 	if !can {
-		return nil, bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
+		return bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
 	}
 
 	var body RequestBody
 
 	if err := c.Bind(&body); err != nil {
 		if _, ok := err.(*echo.HTTPError); ok {
-			return nil, err
+			return err
 		}
-		return &bolo.DefaultResponse{Status: http.StatusNotFound}, nil
+		return bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
 	}
 
 	record := body.Record
@@ -103,42 +100,40 @@ func (ctl *Controller) Create(c echo.Context) (bolo.Response, error) {
 	if record.Username == "" {
 		record.Username, err = gonanoid.Nanoid()
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if err := c.Validate(record); err != nil {
 		if _, ok := err.(*echo.HTTPError); ok {
-			return nil, err
+			return err
 		}
-		return nil, err
+		return err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"body": body,
-	}).Debug(userControllerLogPrefix + "create params")
+	l.Debug(userControllerLogPrefix+"create params", zap.Any("body", body))
 
 	err = record.Save(app)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	err = record.LoadData()
+	err = record.LoadData(c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	resp := FindOneJSONResponse{
 		Record: record,
 	}
 
-	return &bolo.DefaultResponse{
+	return bolo.Send(c, &bolo.DefaultResponse{
 		Status: http.StatusCreated,
 		Data:   resp,
-	}, nil
+	})
 }
 
-func (ctl *Controller) Count(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) Count(c echo.Context) error {
 	var err error
 	pager := bolo.GetPager(c)
 	l := bolo.GetLogger(c)
@@ -154,7 +149,7 @@ func (ctl *Controller) Count(c echo.Context) (bolo.Response, error) {
 
 	if err != nil {
 		l.Debug(userControllerLogPrefix+"count Error on find users", zap.Error(err))
-		return nil, err
+		return err
 	}
 
 	pager.Count = count
@@ -162,12 +157,10 @@ func (ctl *Controller) Count(c echo.Context) (bolo.Response, error) {
 	resp := CountJSONResponse{}
 	resp.Count = count
 
-	return &bolo.DefaultResponse{
-		Data: resp,
-	}, nil
+	return bolo.Send(c, &bolo.DefaultResponse{Data: resp})
 }
 
-func (ctl *Controller) FindOne(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) FindOne(c echo.Context) error {
 	id := c.Param("id")
 	l := bolo.GetLogger(c)
 	l.Debug(userControllerLogPrefix+"findOne id from params", zap.String("id", id))
@@ -176,12 +169,12 @@ func (ctl *Controller) FindOne(c echo.Context) (bolo.Response, error) {
 	record := UserModel{}
 	err := UserFindOne(app, id, &record)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if record.ID == 0 {
 		l.Debug(userControllerLogPrefix+"findOne id record not found", zap.String("id", id))
-		return nil, bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
+		return bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
 	}
 
 	if bolo.IsAuthenticated(c) {
@@ -192,21 +185,19 @@ func (ctl *Controller) FindOne(c echo.Context) (bolo.Response, error) {
 
 	can := bolo.Can(c, "read_user")
 	if !can {
-		return nil, bolo.NewHTTPError(403, "Forbidden", errors.New("user.FindOne forbidden"))
+		return bolo.NewHTTPError(403, "Forbidden", errors.New("user.FindOne forbidden"))
 	}
 
-	record.LoadData()
+	record.LoadData(c)
 
 	resp := FindOneJSONResponse{
 		Record: &record,
 	}
 
-	return &bolo.DefaultResponse{
-		Data: resp,
-	}, nil
+	return bolo.Send(c, &bolo.DefaultResponse{Data: resp})
 }
 
-func (ctl *Controller) Update(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) Update(c echo.Context) error {
 	var err error
 	app := bolo.GetApp(c)
 	l := bolo.GetLogger(c)
@@ -216,7 +207,7 @@ func (ctl *Controller) Update(c echo.Context) (bolo.Response, error) {
 	err = UserFindOne(app, id, &record)
 	if err != nil {
 		l.Debug(userControllerLogPrefix+"update error on find one", zap.Error(err), zap.String("id", id))
-		return nil, errors.Wrap(err, userControllerLogPrefix+"update error on find one")
+		return errors.Wrap(err, userControllerLogPrefix+"update error on find one")
 	}
 
 	if bolo.IsAuthenticated(c) {
@@ -226,10 +217,10 @@ func (ctl *Controller) Update(c echo.Context) (bolo.Response, error) {
 	}
 
 	if !bolo.Can(c, "update_user") {
-		return nil, bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
+		return bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
 	}
 
-	record.LoadData()
+	record.LoadData(c)
 
 	body := FindOneJSONResponse{Record: &record}
 
@@ -237,24 +228,24 @@ func (ctl *Controller) Update(c echo.Context) (bolo.Response, error) {
 		l.Debug(userControllerLogPrefix+"update error on bind", zap.Error(err), zap.String("id", id))
 
 		if _, ok := err.(*echo.HTTPError); ok {
-			return nil, err
+			return err
 		}
-		return nil, c.NoContent(http.StatusNotFound)
+		return c.NoContent(http.StatusNotFound)
 	}
 
 	err = record.Save(app)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &bolo.DefaultResponse{
+	return bolo.Send(c, &bolo.DefaultResponse{
 		Data: FindOneJSONResponse{
 			Record: &record,
 		},
-	}, nil
+	})
 }
 
-func (ctl *Controller) Delete(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) Delete(c echo.Context) error {
 	var err error
 	l := bolo.GetLogger(c)
 	id := c.Param("id")
@@ -265,11 +256,11 @@ func (ctl *Controller) Delete(c echo.Context) (bolo.Response, error) {
 	record := UserModel{}
 	err = UserFindOne(app, id, &record)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if record.ID == 0 {
-		return nil, bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
+		return bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
 	}
 
 	if bolo.IsAuthenticated(c) {
@@ -279,17 +270,15 @@ func (ctl *Controller) Delete(c echo.Context) (bolo.Response, error) {
 	}
 
 	if !bolo.Can(c, "delete_user") {
-		return nil, bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
+		return bolo.NewHTTPError(http.StatusForbidden, "Forbidden", nil)
 	}
 
 	err = record.Delete(app)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &bolo.DefaultResponse{
-		Status: http.StatusNotFound,
-	}, nil
+	return bolo.Send(c, &bolo.DefaultResponse{Status: http.StatusNotFound})
 }
 
 // func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
@@ -404,12 +393,12 @@ type UserRolesResponse struct {
 	Permissions string              `json:"permissions"`
 }
 
-func (ctl *Controller) GetUserRolesAndPermissions(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) GetUserRolesAndPermissions(c echo.Context) error {
 	acl := bolo.GetApp(c).GetAcl()
 	r := UserRolesResponse{Roles: acl.GetRoles()}
-	return &bolo.DefaultResponse{
+	return bolo.Send(c, &bolo.DefaultResponse{
 		Data: r,
-	}, nil
+	})
 }
 
 func (ctl *Controller) GetUserRoles(c echo.Context) error {
@@ -420,18 +409,19 @@ type UserRolesBodyRequest struct {
 	UserRoles []string `json:"userRoles"`
 }
 
-func (ctl *Controller) UpdateUserRoles(c echo.Context) (bolo.Response, error) {
+func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
 	userID := c.Param("userID")
 	app := bolo.GetApp(c)
+	l := bolo.GetLogger(c)
 
 	var user UserModel
 	err := UserFindOne(app, userID, &user)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if user.ID == 0 {
-		return nil, &bolo.HTTPError{
+		return &bolo.HTTPError{
 			Code:    404,
 			Message: "not found",
 		}
@@ -440,30 +430,28 @@ func (ctl *Controller) UpdateUserRoles(c echo.Context) (bolo.Response, error) {
 	body := UserRolesBodyRequest{}
 
 	if err := c.Bind(&body); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error": err,
-		}).Debug("user.UpdateUserRoles error on bind")
+		l.Debug("user.UpdateUserRoles error on bind", zap.Error(err))
 
 		if _, ok := err.(*echo.HTTPError); ok {
-			return nil, err
+			return err
 		}
 
-		return nil, bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
+		return bolo.NewHTTPError(http.StatusNotFound, "Not found", nil)
 	}
 
 	err = user.SetRoles(body.UserRoles)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err = user.Save(app)
 	if err != nil {
-		return nil, errors.Wrap(err, "user.UpdateUserRoles error on save user roles")
+		return errors.Wrap(err, "user.UpdateUserRoles error on save user roles")
 	}
 
-	return &bolo.DefaultResponse{
+	return bolo.Send(c, &bolo.DefaultResponse{
 		Data: make(map[string]string),
-	}, nil
+	})
 }
 
 type ControllerCfg struct{}
