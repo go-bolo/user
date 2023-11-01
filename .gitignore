@@ -1,0 +1,13 @@
+credentials.json
+token.json
+main
+*.log
+/public
+_mocks/cvm/*_dist
+mm
+*.sqlite
+.env
+.project
+development.env
+tmp
+gcloud.json

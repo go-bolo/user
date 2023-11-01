@@ -1,4 +1,4 @@
-package user
+package user_models
 
 import (
 	"strconv"
@@ -70,10 +70,10 @@ func (r *PasswordModel) Generate(password string) ([]byte, error) {
 	return hashedPassword, nil
 }
 
-func (r *PasswordModel) Save(app bolo.App) error {
+func (r *PasswordModel) Save() error {
 	var err error
 
-	db := app.GetDB()
+	db := bolo.GetDefaultDatabaseConnection()
 
 	if r.ID == 0 {
 		// create ....
@@ -92,8 +92,8 @@ func (r *PasswordModel) Save(app bolo.App) error {
 	return nil
 }
 
-func FindPasswordByUsername(app bolo.App, username string, r *PasswordModel) error {
-	db := app.GetDB()
+func FindPasswordByUsername(username string, r *PasswordModel) error {
+	db := bolo.GetDefaultDatabaseConnection()
 
 	err := db.
 		Model(&PasswordModel{}).
@@ -112,8 +112,8 @@ func FindPasswordByUsername(app bolo.App, username string, r *PasswordModel) err
 	return nil
 }
 
-func FindPasswordByUserID(app bolo.App, userID string, passwordRecord *PasswordModel) error {
-	db := app.GetDB()
+func FindPasswordByUserID(userID string, passwordRecord *PasswordModel) error {
+	db := bolo.GetDefaultDatabaseConnection()
 	err := db.Where("userId", userID).
 		First(&passwordRecord).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -122,9 +122,9 @@ func FindPasswordByUserID(app bolo.App, userID string, passwordRecord *PasswordM
 	return nil
 }
 
-func UpdateUserPasswordByUserID(app bolo.App, userID string, password string) error {
+func UpdateUserPasswordByUserID(userID string, password string) error {
 	var record PasswordModel
-	err := FindPasswordByUserID(app, userID, &record)
+	err := FindPasswordByUserID(userID, &record)
 	if err != nil {
 		return err
 	}
@@ -143,5 +143,5 @@ func UpdateUserPasswordByUserID(app bolo.App, userID string, password string) er
 		return err
 	}
 
-	return record.Save(app)
+	return record.Save()
 }

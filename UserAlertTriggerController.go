@@ -5,51 +5,48 @@ import (
 	"net/http"
 
 	"github.com/go-bolo/bolo"
-	"github.com/go-bolo/bolo/acl"
 	"github.com/go-bolo/metatags"
 	user_models "github.com/go-bolo/user/models"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
-var userControllerLogPrefix = "user.controller."
+var userAlertTriggerControllerLogPrefix = "userAlertTrigger.controller."
 
-type ListJSONResponse struct {
+type UserAlertTriggerJSONResponse struct {
 	bolo.BaseListReponse
-	Record *[]*user_models.UserModel `json:"user"`
+	Record *[]*user_models.UserAlertTriggerModel `json:"user_alert_triggers"`
 }
 
-type CountJSONResponse struct {
+type UserAlertTriggerCountJSONResponse struct {
 	bolo.BaseMetaResponse
 }
 
-type FindOneJSONResponse struct {
-	Record *user_models.UserModel `json:"user"`
+type UserAlertTriggerFindOneJSONResponse struct {
+	Record *user_models.UserAlertTriggerModel `json:"user_alert_triggers"`
 }
 
-type RequestBody struct {
-	Record *user_models.UserModel `json:"user"`
+type UserAlertTriggerBodyRequest struct {
+	Record *user_models.UserAlertTriggerModel `json:"user_alert_triggers"`
 }
 
-type TeaserTPL struct {
+type UserAlertTriggerTeaserTPL struct {
 	Ctx    *bolo.RequestContext
-	Record *user_models.UserModel
+	Record *user_models.UserAlertTriggerModel
 }
 
-// Http user controller | struct with http handlers
-type Controller struct {
-	App bolo.App
+// Http userAlertTrigger controller | struct with http handlers
+type UserAlertTriggerController struct {
 }
 
-func (ctl *Controller) Query(c echo.Context) error {
+func (ctl *UserAlertTriggerController) Query(c echo.Context) error {
 	var err error
 	ctx := c.(*bolo.RequestContext)
 
 	var count int64
-	records := []*user_models.UserModel{}
-	err = user_models.QueryAndCountFromRequest(&user_models.QueryAndCountFromRequestCfg{
+	records := []*user_models.UserAlertTriggerModel{}
+	err = user_models.UserAlertTriggerQueryAndCountFromRequest(&user_models.UserAlertTriggerQueryAndCounttCfg{
 		Records: &records,
 		Count:   &count,
 		Limit:   ctx.GetLimit(),
@@ -59,7 +56,7 @@ func (ctl *Controller) Query(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug(userControllerLogPrefix + "query Error on find users")
+		}).Debug(userAlertTriggerControllerLogPrefix + "query Error on find users")
 	}
 
 	ctx.Pager.Count = count
@@ -67,13 +64,13 @@ func (ctl *Controller) Query(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"count":             count,
 		"len_records_found": len(records),
-	}).Debug(userControllerLogPrefix + "query count result")
+	}).Debug(userAlertTriggerControllerLogPrefix + "query count result")
 
 	for i := range records {
 		records[i].LoadData()
 	}
 
-	resp := ListJSONResponse{
+	resp := UserAlertTriggerJSONResponse{
 		Record: &records,
 	}
 
@@ -82,8 +79,8 @@ func (ctl *Controller) Query(c echo.Context) error {
 	return c.JSON(200, &resp)
 }
 
-func (ctl *Controller) Create(c echo.Context) error {
-	logrus.Debug(userControllerLogPrefix + "create running")
+func (ctl *UserAlertTriggerController) Create(c echo.Context) error {
+	logrus.Debug(userAlertTriggerControllerLogPrefix + "create running")
 	var err error
 	ctx := c.(*bolo.RequestContext)
 
@@ -92,7 +89,7 @@ func (ctl *Controller) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "Forbidden")
 	}
 
-	var body RequestBody
+	var body UserAlertTriggerBodyRequest
 
 	if err := c.Bind(&body); err != nil {
 		if _, ok := err.(*echo.HTTPError); ok {
@@ -103,7 +100,6 @@ func (ctl *Controller) Create(c echo.Context) error {
 
 	record := body.Record
 	record.ID = 0
-	record.Username = uuid.New().String()
 
 	if err := c.Validate(record); err != nil {
 		if _, ok := err.(*echo.HTTPError); ok {
@@ -114,7 +110,7 @@ func (ctl *Controller) Create(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"body": body,
-	}).Debug(userControllerLogPrefix + "create params")
+	}).Debug(userAlertTriggerControllerLogPrefix + "create params")
 
 	err = record.Save()
 	if err != nil {
@@ -126,19 +122,19 @@ func (ctl *Controller) Create(c echo.Context) error {
 		return err
 	}
 
-	resp := FindOneJSONResponse{
+	resp := UserAlertTriggerFindOneJSONResponse{
 		Record: record,
 	}
 
 	return c.JSON(http.StatusCreated, &resp)
 }
 
-func (ctl *Controller) Count(c echo.Context) error {
+func (ctl *UserAlertTriggerController) Count(c echo.Context) error {
 	var err error
 	ctx := c.(*bolo.RequestContext)
 
 	var count int64
-	err = user_models.CountQueryFromRequest(&user_models.QueryAndCountFromRequestCfg{
+	err = user_models.UserAlertTriggerCountQueryFromRequest(&user_models.UserAlertTriggerQueryAndCounttCfg{
 		Count:  &count,
 		Limit:  ctx.GetLimit(),
 		Offset: ctx.GetOffset(),
@@ -148,27 +144,27 @@ func (ctl *Controller) Count(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug(userControllerLogPrefix + "count Error on find contents")
+		}).Debug(userAlertTriggerControllerLogPrefix + "count Error on find contents")
 	}
 
 	ctx.Pager.Count = count
 
-	resp := CountJSONResponse{}
+	resp := UserAlertTriggerCountJSONResponse{}
 	resp.Count = count
 
 	return c.JSON(200, &resp)
 }
 
-func (ctl *Controller) FindOne(c echo.Context) error {
+func (ctl *UserAlertTriggerController) FindOne(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.(*bolo.RequestContext)
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug(userControllerLogPrefix + "findOne id from params")
+	}).Debug(userAlertTriggerControllerLogPrefix + "findOne id from params")
 
-	record := user_models.UserModel{}
-	err := user_models.UserFindOne(id, &record)
+	record := user_models.UserAlertTriggerModel{}
+	err := user_models.UserTriggerFindOne(id, &record)
 	if err != nil {
 		return err
 	}
@@ -176,7 +172,7 @@ func (ctl *Controller) FindOne(c echo.Context) error {
 	if record.ID == 0 {
 		logrus.WithFields(logrus.Fields{
 			"id": id,
-		}).Debug(userControllerLogPrefix + "findOne id record not found")
+		}).Debug(userAlertTriggerControllerLogPrefix + "findOne id record not found")
 
 		return echo.NotFoundHandler(c)
 	}
@@ -198,14 +194,14 @@ func (ctl *Controller) FindOne(c echo.Context) error {
 
 	record.LoadData()
 
-	resp := FindOneJSONResponse{
+	resp := UserAlertTriggerFindOneJSONResponse{
 		Record: &record,
 	}
 
 	return c.JSON(200, &resp)
 }
 
-func (ctl *Controller) Update(c echo.Context) error {
+func (ctl *UserAlertTriggerController) Update(c echo.Context) error {
 	var err error
 
 	id := c.Param("id")
@@ -215,16 +211,16 @@ func (ctl *Controller) Update(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"id":    id,
 		"roles": ctx.GetAuthenticatedRoles(),
-	}).Debug(userControllerLogPrefix + "update id from params")
+	}).Debug(userAlertTriggerControllerLogPrefix + "update id from params")
 
-	record := user_models.UserModel{}
-	err = user_models.UserFindOne(id, &record)
+	record := user_models.UserAlertTriggerModel{}
+	err = user_models.UserTriggerFindOne(id, &record)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"id":    id,
 			"error": err,
-		}).Debug(userControllerLogPrefix + "update error on find one")
-		return errors.Wrap(err, userControllerLogPrefix+"update error on find one")
+		}).Debug(userAlertTriggerControllerLogPrefix + "update error on find one")
+		return errors.Wrap(err, userAlertTriggerControllerLogPrefix+"update error on find one")
 	}
 
 	if record.GetID() == ctx.AuthenticatedUser.GetID() {
@@ -237,13 +233,13 @@ func (ctl *Controller) Update(c echo.Context) error {
 
 	record.LoadData()
 
-	body := FindOneJSONResponse{Record: &record}
+	body := UserAlertTriggerFindOneJSONResponse{Record: &record}
 
 	if err := c.Bind(&body); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"id":    id,
 			"error": err,
-		}).Debug(userControllerLogPrefix + "update error on bind")
+		}).Debug(userAlertTriggerControllerLogPrefix + "update error on bind")
 
 		if _, ok := err.(*echo.HTTPError); ok {
 			return err
@@ -255,26 +251,26 @@ func (ctl *Controller) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	resp := FindOneJSONResponse{
+	resp := UserAlertTriggerFindOneJSONResponse{
 		Record: &record,
 	}
 
 	return c.JSON(http.StatusOK, &resp)
 }
 
-func (ctl *Controller) Delete(c echo.Context) error {
+func (ctl *UserAlertTriggerController) Delete(c echo.Context) error {
 	var err error
 
 	id := c.Param("id")
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug(userControllerLogPrefix + "delete id from params")
+	}).Debug(userAlertTriggerControllerLogPrefix + "delete id from params")
 
 	ctx := c.(*bolo.RequestContext)
 
-	record := user_models.UserModel{}
-	err = user_models.UserFindOne(id, &record)
+	record := user_models.UserAlertTriggerModel{}
+	err = user_models.UserTriggerFindOne(id, &record)
 	if err != nil {
 		return err
 	}
@@ -299,7 +295,7 @@ func (ctl *Controller) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
+func (ctl *UserAlertTriggerController) FindAllPageHandler(c echo.Context) error {
 	var err error
 	ctx := c.(*bolo.RequestContext)
 
@@ -313,8 +309,8 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	mt.Title = "Usuários no Monitor do Mercado"
 
 	var count int64
-	records := []*user_models.UserModel{}
-	err = user_models.QueryAndCountFromRequest(&user_models.QueryAndCountFromRequestCfg{
+	records := []*user_models.UserAlertTriggerModel{}
+	err = user_models.UserAlertTriggerQueryAndCountFromRequest(&user_models.UserAlertTriggerQueryAndCounttCfg{
 		Records: &records,
 		Count:   &count,
 		Limit:   ctx.GetLimit(),
@@ -325,7 +321,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error": err,
-		}).Debug(userControllerLogPrefix + "FindAllPageHandler Error on find contents")
+		}).Debug(userAlertTriggerControllerLogPrefix + "FindAllPageHandler Error on find contents")
 	}
 
 	ctx.Pager.Count = count
@@ -335,21 +331,21 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	logrus.WithFields(logrus.Fields{
 		"count":             count,
 		"len_records_found": len(records),
-	}).Debug(userControllerLogPrefix + "FindAllPageHandler count result")
+	}).Debug(userAlertTriggerControllerLogPrefix + "FindAllPageHandler count result")
 
 	for i := range records {
 		records[i].LoadTeaserData()
 
 		var teaserHTML bytes.Buffer
 
-		err = ctx.RenderTemplate(&teaserHTML, "user/teaser", TeaserTPL{
+		err = ctx.RenderTemplate(&teaserHTML, "user/teaser", UserAlertTriggerTeaserTPL{
 			Ctx:    ctx,
 			Record: records[i],
 		})
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"err": err.Error(),
-			}).Error(userControllerLogPrefix + "FindAllPageHandler error on render teaser")
+			}).Error(userAlertTriggerControllerLogPrefix + "FindAllPageHandler error on render teaser")
 		} else {
 			teaserList = append(teaserList, teaserHTML.String())
 		}
@@ -363,7 +359,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 	})
 }
 
-func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
+func (ctl *UserAlertTriggerController) FindOnePageHandler(c echo.Context) error {
 	var err error
 	ctx := c.(*bolo.RequestContext)
 
@@ -376,121 +372,32 @@ func (ctl *Controller) FindOnePageHandler(c echo.Context) error {
 
 	logrus.WithFields(logrus.Fields{
 		"id": id,
-	}).Debug(userControllerLogPrefix + "FindOnePageHandler id from params")
+	}).Debug(userAlertTriggerControllerLogPrefix + "FindOnePageHandler id from params")
 
-	record := user_models.UserModel{}
-	err = user_models.UserFindOne(id, &record)
+	record := user_models.UserAlertTriggerModel{}
+	err = user_models.UserTriggerFindOne(id, &record)
 	if err != nil {
-
+		return err
 	}
 
 	if record.ID == 0 {
 		logrus.WithFields(logrus.Fields{
 			"id": id,
-		}).Debug(userControllerLogPrefix + "FindOnePageHandler id record not found")
+		}).Debug(userAlertTriggerControllerLogPrefix + "FindOnePageHandler id record not found")
 		return echo.NotFoundHandler(c)
 	}
 
 	record.LoadData()
 
-	ctx.Title = record.DisplayName
+	// ctx.Title = record.DisplayName
 	ctx.BodyClass = append(ctx.BodyClass, "body-content-findOne")
 
-	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = record.DisplayName
-	mt.Description = record.Biography
+	// mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+	// mt.Title = record.DisplayName
+	// mt.Description = record.Biography
 
 	return c.Render(http.StatusOK, "user/findOne", &bolo.TemplateCTX{
 		Ctx:    ctx,
 		Record: &record,
 	})
 }
-
-type UserRolesResponse struct {
-	Roles       map[string]*acl.Role `json:"roles"`
-	Permissions string               `json:"permissions"`
-}
-
-func (ctl *Controller) GetUserRolesAndPermissions(c echo.Context) error {
-	ctx := c.(*bolo.RequestContext)
-	appStruct := ctx.App.(*bolo.AppStruct)
-	r := UserRolesResponse{Roles: appStruct.RolesList}
-
-	return c.JSON(http.StatusOK, &r)
-}
-func (ctl *Controller) GetUserRoles(c echo.Context) error {
-	return c.String(http.StatusNotImplemented, "Not implemented")
-}
-
-type UserRolesBodyRequest struct {
-	UserRoles []string `json:"userRoles"`
-}
-
-func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
-	userID := c.Param("userID")
-
-	var user user_models.UserModel
-	err := user_models.UserFindOne(userID, &user)
-	if err != nil {
-		return err
-	}
-
-	if user.ID == 0 {
-		return &bolo.HTTPError{
-			Code:    404,
-			Message: "not found",
-		}
-	}
-
-	body := UserRolesBodyRequest{}
-
-	if err := c.Bind(&body); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error": err,
-		}).Debug("user.UpdateUserRoles error on bind")
-
-		if _, ok := err.(*echo.HTTPError); ok {
-			return err
-		}
-		return c.NoContent(http.StatusNotFound)
-	}
-
-	err = user.SetRoles(body.UserRoles)
-	if err != nil {
-		return err
-	}
-
-	err = user.Save()
-	if err != nil {
-		return errors.Wrap(err, "user.UpdateUserRoles error on save user roles")
-	}
-
-	return c.JSON(http.StatusOK, make(map[string]string))
-}
-
-type ControllerCfg struct {
-	App bolo.App
-}
-
-func NewController(cfg *ControllerCfg) *Controller {
-	ctx := Controller{App: cfg.App}
-
-	return &ctx
-}
-
-type RoleTableItem struct {
-	Name    string `json:"name"`
-	Checked bool   `json:"checked"`
-	Role    string `json:"role"`
-}
-
-// func buildUserRolesVar(userRoles []string, app bolo.App) ([]RoleTableItem, error) {
-
-// 	appStruct := app.(*bolo.AppStruct)
-
-// 	for _, r := range userRoles {
-
-// 	}
-
-// 	return []RoleTableItem{}, nil
-// }

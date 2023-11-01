@@ -4,8 +4,9 @@ import (
 	"strconv"
 
 	"github.com/go-bolo/bolo"
-	"github.com/go-catupiry/system_settings"
+	"github.com/go-bolo/system_settings"
 	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
 )
 
 type userSettingsJSONResponse struct {
@@ -19,7 +20,7 @@ type userSettingsJSONResponse struct {
 	DefaultLocale     string               `json:"defaultLocale"`
 	Date              clientSideDateFormat `json:"date"`
 	Plugins           []string             `json:"plugins"`
-	User              bolo.User            `json:"authenticatedUser"`
+	User              bolo.UserInterface   `json:"authenticatedUser"`
 	ActiveLocale      string               `json:"activeLocale"`
 	UserPermissions   map[string]bool      `json:"userPermissions"`
 	SystemSettings    map[string]string    `json:"systemSettings"`
@@ -30,10 +31,10 @@ type clientSideDateFormat struct {
 }
 
 func UserSettingsHandler(c echo.Context) error {
-	l := bolo.GetLogger(c)
-	l.Debug("user.UserSettingsHandler running")
-	app := bolo.GetApp(c)
-	cfgs := app.GetConfiguration()
+	logrus.Debug("user.UserSettingsHandler running")
+	ctx := c.(*bolo.RequestContext)
+
+	cfgs := bolo.GetConfiguration()
 
 	queryDefaultLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT", "20"))
 	queryMaxLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT_MAX", "50"))
@@ -45,7 +46,7 @@ func UserSettingsHandler(c echo.Context) error {
 
 	data := userSettingsJSONResponse{
 		AppName:           cfgs.GetF("SITE_NAME", "App"),
-		Hostname:          bolo.GetBaseURL(c),
+		Hostname:          ctx.AppOrigin,
 		ActiveLocale:      cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		DefaultLocale:     cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		Date:              clientSideDateFormat{DefaultFormat: "L HH:mm"},
@@ -57,20 +58,20 @@ func UserSettingsHandler(c echo.Context) error {
 		SystemSettings:    ss,
 	}
 
-	if bolo.IsAuthenticated(c) {
-		data.User = bolo.GetAuthenticatedUser(c)
+	if ctx.IsAuthenticated {
+		data.User = ctx.AuthenticatedUser
 
 		// TODO! add all user authenticated data
-		AUserLang := data.User.GetLanguage()
+		AUserLang := ctx.AuthenticatedUser.GetLanguage()
 		if AUserLang != "" {
 			data.ActiveLocale = AUserLang
 		}
 	}
 
-	roles := bolo.GetRoles(c)
+	roles := ctx.GetAuthenticatedRoles()
 
-	for _, roleName := range roles {
-		role := app.GetAcl().GetRole(roleName)
+	for _, roleName := range *roles {
+		role := ctx.App.GetRole(roleName)
 		if role == nil {
 			continue
 		}
@@ -80,7 +81,5 @@ func UserSettingsHandler(c echo.Context) error {
 		}
 	}
 
-	return bolo.Send(c, &bolo.DefaultResponse{
-		Data: data,
-	})
+	return c.JSON(200, &data)
 }

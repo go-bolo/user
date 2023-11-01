@@ -1,15 +1,17 @@
-package user
+package user_models
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/go-bolo/bolo"
 	"github.com/go-bolo/bolo/helpers"
+	"github.com/go-bolo/clock"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -32,15 +34,19 @@ type UserModel struct {
 	Language     string `gorm:"column:language;" json:"language" filter:"param:language;type:string"`
 	ConfirmEmail string `gorm:"column:confirmEmail;" json:"confirmEmail"`
 
-	AcceptTerms bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
-	Birthdate   string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
-	Phone       string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
+	AcceptTerms         bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
+	Birthdate           string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
+	Phone               string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
+	Investments         string `gorm:"column:investments;" json:"investments" filter:"param:investments;type:string"`
+	ReceiveInformations bool   `gorm:"column:receiveInformations;" json:"receiveInformations" filter:"param:receiveInformations;type:bool"`
+	AlreadyInvest       string `gorm:"column:alreadyInvest;" json:"alreadyInvest" filter:"param:alreadyInvest;type:string"`
+	CapitalToInvest     string `gorm:"column:capitalToInvest;" json:"capitalToInvest" filter:"param:capitalToInvest;type:string"`
 
 	Roles     []string `gorm:"-" json:"roles"`
 	RolesText string   `gorm:"column:roles;" json:"-"`
 
-	CreatedAt time.Time `gorm:"column:createdAt;" json:"createdAt" filter:"param:createdAt;type:date"`
-	UpdatedAt time.Time `gorm:"column:updatedAt;" json:"updatedAt" filter:"param:updatedAt;type:date"`
+	CreatedAt time.Time `gorm:"column:createdAt;autoCreateTime:false;" json:"createdAt" filter:"param:createdAt;type:date"`
+	UpdatedAt time.Time `gorm:"column:updatedAt;autoupdatetime:false;default:null;" json:"updatedAt" filter:"param:updatedAt;type:date"`
 }
 
 func (r *UserModel) GetID() string {
@@ -141,8 +147,8 @@ func (UserModel) TableName() string {
 	return "users"
 }
 
-func (r *UserModel) FillById(app bolo.App, id string) error {
-	return UserFindOne(app, id, r)
+func (r *UserModel) FillById(id string) error {
+	return UserFindOne(id, r)
 }
 
 func (r *UserModel) GetRoles() []string {
@@ -205,6 +211,22 @@ func (r *UserModel) GetPhone() string {
 	return r.Phone
 }
 
+func (r *UserModel) GetInvestments() string {
+	return r.Investments
+}
+
+func (r *UserModel) GetReceiveInformationsString() string {
+	return strconv.FormatBool(r.ReceiveInformations)
+}
+
+func (r *UserModel) GetalreadyInvest() string {
+	return r.AlreadyInvest
+}
+
+func (r *UserModel) GetCapitalToInvest() string {
+	return r.CapitalToInvest
+}
+
 func (r *UserModel) GetCreatedAtString() string {
 	return r.CreatedAt.UTC().String()
 }
@@ -213,11 +235,14 @@ func (r *UserModel) GetUpdateAtString() string {
 	return r.UpdatedAt.UTC().String()
 }
 
-func (m *UserModel) Save(app bolo.App) error {
+func (m *UserModel) Save() error {
 	var err error
-	db := app.GetDB()
+	db := bolo.GetDefaultDatabaseConnection()
+	app := bolo.GetApp()
+	m.UpdatedAt = app.GetClock().Now()
 
 	if m.ID == 0 {
+		m.CreatedAt = clock.New().Now()
 		// create ....
 		err = db.Create(&m).Error
 		if err != nil {
@@ -236,28 +261,28 @@ func (m *UserModel) Save(app bolo.App) error {
 	return nil
 }
 
-func (m *UserModel) LoadTeaserData(c bolo.Context) error {
+func (m *UserModel) LoadTeaserData() error {
 	m.GetRoles()
 	return nil
 }
 
-func (m *UserModel) LoadData(c bolo.Context) error {
+func (m *UserModel) LoadData() error {
 	m.GetRoles()
 	return nil
 }
 
-func (r *UserModel) Delete(app bolo.App) error {
+func (r *UserModel) Delete() error {
 	if r.ID == 0 {
 		return nil
 	}
-	db := app.GetDB()
+	db := bolo.GetDefaultDatabaseConnection()
 	return db.Unscoped().Delete(&r).Error
 }
 
-func (m *UserModel) ValidPassword(app bolo.App, password string) (bool, error) {
+func (m *UserModel) ValidPassword(password string) (bool, error) {
 	var passwordRecord PasswordModel
 
-	err := FindPasswordByUserID(app, m.GetID(), &passwordRecord)
+	err := FindPasswordByUserID(m.GetID(), &passwordRecord)
 	if err != nil {
 		return false, err
 	}
@@ -274,20 +299,13 @@ func (m *UserModel) ValidPassword(app bolo.App, password string) (bool, error) {
 	return true, nil
 }
 
-func (m *UserModel) SetPassword(app bolo.App, password string) error {
-	return UpdateUserPasswordByUserID(app, m.GetID(), password)
+func (m *UserModel) SetPassword(password string) error {
+	return UpdateUserPasswordByUserID(m.GetID(), password)
 }
 
-func CreateUser() {
+func UsersQuery(userList *[]UserModel, limit int) error {
 
-}
-
-func UpdateUser() {
-
-}
-
-func UsersQuery(app bolo.App, userList *[]UserModel, limit int) error {
-	db := app.GetDB()
+	db := bolo.GetDefaultDatabaseConnection()
 
 	if err := db.
 		Limit(limit).
@@ -298,8 +316,8 @@ func UsersQuery(app bolo.App, userList *[]UserModel, limit int) error {
 }
 
 // FindOne - Find one user record
-func UserFindOne(app bolo.App, id string, record *UserModel) error {
-	db := app.GetDB()
+func UserFindOne(id string, record *UserModel) error {
+	db := bolo.GetDefaultDatabaseConnection()
 	err := db.First(record, id).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
@@ -307,8 +325,8 @@ func UserFindOne(app bolo.App, id string, record *UserModel) error {
 	return nil
 }
 
-func UserFindOneByUsername(app bolo.App, username string, record *UserModel) error {
-	db := app.GetDB()
+func UserFindOneByUsername(username string, record *UserModel) error {
+	db := bolo.GetDefaultDatabaseConnection()
 
 	return db.
 		Where(
@@ -318,8 +336,8 @@ func UserFindOneByUsername(app bolo.App, username string, record *UserModel) err
 		First(record).Error
 }
 
-func LoadAllUsers(app bolo.App, userList *[]UserModel) error {
-	db := app.GetDB()
+func LoadAllUsers(userList *[]UserModel) error {
+	db := bolo.GetDefaultDatabaseConnection()
 
 	if err := db.
 		Limit(99999).
@@ -341,23 +359,28 @@ type QueryAndCountFromRequestCfg struct {
 }
 
 func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
+	db := bolo.GetDefaultDatabaseConnection()
+
 	c := opts.C
-	app := bolo.GetApp(c)
-	db := app.GetDB()
-	l := bolo.GetLogger(c)
 
 	q := c.QueryParam("q")
 	query := db
+	ctx := c.(*bolo.RequestContext)
 
-	if !bolo.Can(c, "find_user") {
-		l.Debug("QueryAndCountFromRequest forbidden", zap.Any("roles", bolo.GetRoles(c)))
+	can := ctx.Can("find_user")
+	if !can {
+		logrus.WithFields(logrus.Fields{
+			"roles": ctx.GetAuthenticatedRoles(),
+		}).Debug("QueryAndCountFromRequest forbidden")
 
 		return nil
 	}
 
-	queryI, err := bolo.GetQueryParser(c).SetDatabaseQueryForModel(query, &UserModel{})
+	queryI, err := ctx.Query.SetDatabaseQueryForModel(query, &UserModel{})
 	if err != nil {
-		l.Error("QueryAndCountFromRequest error", zap.Error(err))
+		logrus.WithFields(logrus.Fields{
+			"error": fmt.Sprintf("%+v\n", err),
+		}).Error("QueryAndCountFromRequest error")
 	}
 	query = queryI.(*gorm.DB)
 
@@ -391,11 +414,11 @@ func QueryAndCountFromRequest(opts *QueryAndCountFromRequestCfg) error {
 }
 
 func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
+	db := bolo.GetDefaultDatabaseConnection()
+
 	c := opts.C
-	app := bolo.GetApp(c)
-	db := app.GetDB()
-	l := bolo.GetLogger(c)
 	q := c.QueryParam("q")
+	ctx := c.(*bolo.RequestContext)
 
 	// Count ...
 	queryCount := db
@@ -407,32 +430,20 @@ func CountQueryFromRequest(opts *QueryAndCountFromRequestCfg) error {
 		)
 	}
 
-	if !bolo.Can(c, "find_user") {
+	can := ctx.Can("find_user")
+	if !can {
 		return nil
 	}
 
-	queryICount, err := bolo.GetQueryParser(c).SetDatabaseQueryForModel(queryCount, &UserModel{})
+	queryICount, err := ctx.Query.SetDatabaseQueryForModel(queryCount, &UserModel{})
 	if err != nil {
-		l.Error("QueryAndCountFromRequest count error", zap.Error(err))
+		logrus.WithFields(logrus.Fields{
+			"error": fmt.Sprintf("%+v\n", err),
+		}).Error("QueryAndCountFromRequest count error")
 	}
 	queryCount = queryICount.(*gorm.DB)
 
 	return queryCount.
 		Table("users").
 		Count(opts.Count).Error
-}
-
-func UserFindOneByEmail(app bolo.App, email string, record *UserModel) error {
-	db := app.GetDB()
-
-	return db.
-		Where("email = ?", email).
-		First(record).Error
-}
-
-type UserModelOpts struct {
-}
-
-func NewUserModel(opts *UserModelOpts) (*UserModel, error) {
-	return &UserModel{}, nil
 }

@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/go-bolo/bolo"
-	"github.com/labstack/echo/v4"
 )
 
 type HTMLBootstrapConfig struct {
@@ -28,22 +27,23 @@ type HTMLBootstrapConfig struct {
 }
 
 func renderClientAppConfigs(tplCtx bolo.TemplateCTX) template.HTML {
-	c := tplCtx.Ctx.(echo.Context)
-	app := bolo.GetApp(c)
-	cfgs := app.GetConfiguration()
+	ctx := tplCtx.Ctx.(*bolo.RequestContext)
+	app := bolo.GetApp()
+
+	cfgs := bolo.GetConfiguration()
 
 	queryDefaultLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT", "20"))
 	queryMaxLimit, _ := strconv.Atoi(cfgs.GetF("PAGER_LIMIT_MAX", "50"))
 
 	keys := make([]string, 0, len(app.GetPlugins()))
-	for k := range app.GetPlugins() {
-		keys = append(keys, k)
+	for _, p := range app.GetPlugins() {
+		keys = append(keys, p.GetName())
 	}
 
 	data := HTMLBootstrapConfig{
 		AppName:           cfgs.GetF("SITE_NAME", "App"),
-		ENV:               app.GetEnv(),
-		Hostname:          bolo.GetBaseURL(c),
+		ENV:               ctx.ENV,
+		Hostname:          ctx.AppOrigin,
 		ActiveLocale:      cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		DefaultLocale:     cfgs.GetF("DEFAULT_LOCALE", "en-us"),
 		Date:              clientSideDateFormat{DefaultFormat: "L HH:mm"},
@@ -51,23 +51,23 @@ func renderClientAppConfigs(tplCtx bolo.TemplateCTX) template.HTML {
 		QueryMaxLimit:     queryMaxLimit,
 		Locales:           []string{"pt-br"},
 		Plugins:           keys,
-		UserRoles:         bolo.GetRoles(c),
+		UserRoles:         *ctx.GetAuthenticatedRoles(),
 	}
 
-	if bolo.IsAuthenticated(c) {
-		user := bolo.GetAuthenticatedUser(c)
+	if ctx.IsAuthenticated {
 		data.User = make(map[string]string)
-		data.User["id"] = user.GetID()
-		data.User["displayName"] = user.GetDisplayName()
+		data.User["id"] = ctx.AuthenticatedUser.GetID()
+		data.User["displayName"] = ctx.AuthenticatedUser.GetDisplayName()
+
 		// TODO! add all user authenticated data
-		AUserLang := user.GetLanguage()
+		AUserLang := ctx.AuthenticatedUser.GetLanguage()
 		if AUserLang != "" {
 			data.ActiveLocale = AUserLang
 		}
 	}
 
 	for _, role := range data.UserRoles {
-		bolo.AddHTMLBodyClass(c, "ur-"+role)
+		ctx.BodyClass = append(ctx.BodyClass, "ur-"+role)
 	}
 
 	jsonStringData, err := json.Marshal(data)
