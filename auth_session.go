@@ -1,10 +1,10 @@
 package user
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-bolo/bolo"
 	user_models "github.com/go-bolo/user/models"
@@ -12,8 +12,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 )
-
-var ctx = context.Background()
 
 // Init - Start the redis session connection
 func Init(app bolo.App) {
@@ -49,7 +47,6 @@ func (sd *SessionData) ToJSON() string {
 
 func sessionAuthenticationHandler(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
-
 	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	sess, err := session.Get("session", c)
@@ -64,6 +61,12 @@ func sessionAuthenticationHandler(c echo.Context) error {
 	}
 
 	if sess.Values["uid"] == nil {
+		seesC, _ := c.Cookie("session")
+		if seesC != nil && seesC.Value != "" {
+			// the session cookie still exists then delete it:
+			seesC.Expires = time.Now().AddDate(0, -1, 0)
+			c.SetCookie(seesC)
+		}
 		return nil // not authenticated with sessions
 	}
 

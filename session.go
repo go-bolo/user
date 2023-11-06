@@ -3,7 +3,6 @@ package user
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-bolo/bolo"
 	"github.com/gorilla/sessions"
@@ -51,18 +50,6 @@ func initRedisSession() {
 	}
 }
 
-// SessionGetItem - Get item from redis session
-func SessionGetItem(key string) (string, error) {
-	return SessionDBReader.Get(ctx, key).Result()
-}
-
-var ExpirationTime int64 = 60 * 60 * 24 // 1 day
-
-// SessionSetItem - Set item in redis session
-func SessionSetItem(key string, value string) error {
-	return SessionDBWriter.Set(ctx, key, value, time.Duration(ExpirationTime)*time.Second).Err()
-}
-
 func SetUserSession(c echo.Context, user bolo.UserInterface) (*sessions.Session, error) {
 	sess, err := session.Get("session", c)
 	if err != nil {
@@ -94,7 +81,6 @@ func DeleteUserSession(c echo.Context) error {
 	}
 
 	sess.Values["uid"] = 0
-
 	sess.Options.MaxAge = -1
 	err = sess.Save(c.Request(), c.Response())
 	if err != nil {
