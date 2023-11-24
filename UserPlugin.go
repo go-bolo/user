@@ -2,6 +2,7 @@ package user
 
 import (
 	"github.com/go-bolo/bolo"
+	migrations_user "github.com/go-bolo/user/migrations/user"
 	"github.com/gookit/event"
 	"github.com/sirupsen/logrus"
 )
@@ -85,8 +86,10 @@ func (r *UserPlugin) BindRoutes(app bolo.App) error {
 	return nil
 }
 
-func (r *UserPlugin) GetMigrations() []*bolo.Migration {
-	return []*bolo.Migration{}
+func (p *UserPlugin) GetMigrations() []*bolo.Migration {
+	return []*bolo.Migration{
+		migrations_user.GetInitMigration(),
+	}
 }
 
 func (p *UserPlugin) setTemplateFunctions(app bolo.App) error {
