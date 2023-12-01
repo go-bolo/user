@@ -19,6 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type EmptySuccessResponse struct {
+	Messages []*bolo.ResponseMessage `json:"messages,omitempty"`
+}
+
 type AuthController struct {
 	App bolo.App
 }
@@ -401,7 +405,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 
 	authToken, err := user_models.CreateAuthToken(u.GetID(), "resetPassword")
 	if err != nil {
-		return errors.Wrap(err, "AuthController.ForgotPasswordChange_Request error on create auth token")
+		return errors.Wrap(err, "AuthController.ForgotPasswordChange_Request eJSONrror on create auth token")
 	}
 
 	if ctl.App.GetPlugin("emails") != nil {
@@ -437,10 +441,13 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) (err error) {
 	ctx := c.(*bolo.RequestContext)
 
-	ctx.Set("template", "auth/forgot-password-request-with-identifier")
-	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	ctx.Title = "Senha perdida - resetar"
-	mt.Title = "Senha perdida - resetar | Monitor do Mercado"
+	isJson := ctx.GetResponseContentType() == "application/json"
+	if !isJson {
+		ctx.Set("template", "auth/forgot-password-request-with-identifier")
+		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+		mt.Title = "Senha perdida - resetar | Monitor do Mercado"
+		ctx.Title = "Senha perdida - resetar"
+	}
 
 	if ctx.Request().Method == "POST" {
 		body := ForgotPasswordChange_RequestBody{}
@@ -505,11 +512,22 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 				Message: "E-mail enviado com sucesso. Verifique sua caixa de entrada e siga as instruções para resetar sua senha.",
 				Type:    "success",
 			})
+		} else {
+			ctx.AddResponseMessage(&bolo.ResponseMessage{
+				Message: "O código de login foi criado mas o email não foi enviado, verifique as configurações de email do sistema.",
+				Type:    "warning",
+			})
+
+			logrus.WithFields(logrus.Fields{
+				"resetTokenURL": authToken.GetResetUrl(ctx),
+				"user_id":       u.GetID(),
+			}).Warn("AuthController.ForgotPassword_RequestWithIdentifier E-mail not sent, then the reset token url was logged")
 		}
 
-		switch ctx.GetResponseContentType() {
-		case "application/json":
-			return c.JSON(http.StatusOK, bolo.EmptyResponse{})
+		if isJson {
+			return c.JSON(http.StatusOK, EmptySuccessResponse{
+				Messages: ctx.GetResponseMessages(),
+			})
 		}
 	}
 
