@@ -20,8 +20,9 @@ type AuthPlugin struct {
 	// a map with valid reset page prefix:
 	ResetPrefixNames map[string]string
 
-	AuthController    *AuthController
-	SessionController *SessionController
+	AuthController         *AuthController
+	SessionController      *SessionController
+	FacebookAuthController *FacebookAuthController
 
 	Name string
 
@@ -39,6 +40,7 @@ func (p *AuthPlugin) Init(app bolo.App) error {
 
 	p.AuthController = NewAuthController(&NewAuthControllerCFG{App: app})
 	p.SessionController = NewSessionController(&NewSessionControllerCFG{App: app})
+	p.FacebookAuthController = NewFacebookAuthController(&NewFacebookAuthControllerCFG{App: app})
 
 	app.GetEvents().On("install", event.ListenerFunc(func(e event.Event) error {
 		InstallAuth(app)
@@ -133,8 +135,9 @@ func (r *AuthPlugin) BindRoutes(app bolo.App) error {
 	router.POST("/:userID/new-password", r.AuthController.SetPassword)
 	router.POST("/:userID/set-password", r.AuthController.SetPassword)
 
-	// new v2 apis
-
+	// social auths:
+	fbAuthCtl := r.FacebookAuthController
+	mainRouter.POST("/auth/facebook/app-login-code", fbAuthCtl.LoginWithFacebookAppCode)
 	return nil
 }
 

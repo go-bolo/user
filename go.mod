@@ -6,6 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.31.0
 	github.com/approvals/go-approval-tests v0.0.0-20220530063708-32d5677069bd
 	github.com/brianvoe/gofakeit/v6 v6.14.5
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/go-bolo/bolo v1.1.1
 	github.com/go-bolo/clock v0.0.3
 	github.com/go-bolo/emails v0.0.2
@@ -23,9 +24,9 @@ require (
 	github.com/redis/go-redis/v9 v9.3.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/crypto v0.14.0
+	golang.org/x/crypto v0.16.0
+	golang.org/x/oauth2 v0.15.0
 	gopkg.in/boj/redistore.v1 v1.0.0-20160128113310-fc113767cd6b
-	gorm.io/datatypes v1.2.0
 	gorm.io/gorm v1.25.5
 )
 
@@ -51,6 +52,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect
@@ -81,11 +83,13 @@ require (
 	github.com/vanng822/css v1.0.1 // indirect
 	github.com/vanng822/go-premailer v1.20.2 // indirect
 	github.com/yuin/gopher-lua v1.1.0 // indirect
-	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sync v0.4.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
