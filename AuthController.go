@@ -217,6 +217,97 @@ func (ctl *AuthController) ChangeOwnPassword_Page(c echo.Context) error {
 	}, ctx)
 }
 
+func (ctl *AuthController) ChangeOwnPasswordApi(c echo.Context) error {
+	ctx := c.(*bolo.RequestContext)
+
+	if !ctx.IsAuthenticated {
+		return &bolo.HTTPError{
+			Code:     http.StatusForbidden,
+			Message:  "user should be authenticated",
+			Internal: errors.New("user should be authenticated"),
+		}
+	}
+
+	body := ChangeOwnPasswordBody{}
+
+	if err := c.Bind(&body); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Debug("AuthController.ChangeOwnPasswordApi error on bind")
+
+		if e, ok := err.(*echo.HTTPError); ok {
+			return e
+		} else {
+			return &bolo.HTTPError{
+				Code:     http.StatusBadRequest,
+				Message:  "Invalid data sent",
+				Internal: errors.New("Invalid data sent on ChangeOwnPasswordApi"),
+			}
+		}
+	}
+
+	if err := c.Validate(&body); err != nil {
+		return err
+	}
+
+	record := ctx.AuthenticatedUser.(*user_models.UserModel)
+
+	if body.Password == "" {
+		var passwordRecord user_models.PasswordModel
+		err := user_models.FindPasswordByUserID(record.GetID(), &passwordRecord)
+		if err != nil {
+			return err
+		}
+
+		if passwordRecord.ID != 0 {
+			return &bolo.HTTPError{
+				Code:     http.StatusUnprocessableEntity,
+				Message:  "invalid password",
+				Internal: errors.New("ChangeOwnPassword forbidden: password record not found"),
+			}
+		}
+	} else {
+		valid, err := record.ValidPassword(body.Password)
+		if err != nil {
+			return err
+		}
+
+		if !valid {
+			return &bolo.HTTPError{
+				Code:     http.StatusUnprocessableEntity,
+				Message:  "Invalid password, current password is wrong",
+				Internal: errors.New("ChangeOwnPassword forbidden"),
+			}
+		}
+	}
+
+	err := record.SetPassword(body.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	// Notify the password change:
+	emails.SendEmailAsync(&emails.EmailOpts{
+		To:           record.Email,
+		TemplateName: "AuthChangePasswordEmail",
+		Variables: emails.TemplateVariables{
+			"displayName": record.DisplayName,
+			"siteName":    system_settings.Get("siteName"),
+			"siteUrl":     ctx.AppOrigin,
+			"username":    record.Username,
+		},
+	})
+
+	ctx.AddResponseMessage(&bolo.ResponseMessage{
+		Message: "Senha alterada com sucesso",
+		Type:    "success",
+	})
+
+	return c.JSON(http.StatusOK, EmptySuccessResponse{
+		Messages: ctx.GetResponseMessages(),
+	})
+}
+
 // ChangeOwnPassword - POST endpoint
 func (ctl *AuthController) ChangeOwnPassword(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
@@ -284,7 +375,7 @@ func (ctl *AuthController) ChangeOwnPassword(c echo.Context) error {
 		if !valid {
 			return &bolo.HTTPError{
 				Code:     http.StatusUnprocessableEntity,
-				Message:  "Invalid password, current password is wrong",
+				Message:  "Senha inválida, a senha atual está errada",
 				Internal: errors.New("ChangeOwnPassword forbidden"),
 			}
 		}

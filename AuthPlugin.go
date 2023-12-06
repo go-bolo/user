@@ -121,8 +121,9 @@ func (r *AuthPlugin) BindRoutes(app bolo.App) error {
 	router.GET("/:userID/forgot-password/reset", r.AuthController.ForgotPassword_ResetPage)
 	router.POST("/:userID/forgot-password/reset", r.AuthController.ForgotPassword_ResetPage)
 
-	routerV2 := app.SetRouterGroup("auth_v2", "/api/auth")
+	routerV2 := app.SetRouterGroup("auth_v2", "/api/v2/auth")
 	routerV2.POST("/forgot-password/process", r.AuthController.ForgotPassword_Process)
+	routerV2.POST("/change-password", r.AuthController.ChangeOwnPasswordApi)
 
 	mainRouter := app.GetRouter()
 	mainRouter.GET("/login", r.SessionController.LoginPage) // ok
