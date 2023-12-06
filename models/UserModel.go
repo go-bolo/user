@@ -235,10 +235,10 @@ func (r *UserModel) GetUpdateAtString() string {
 	return r.UpdatedAt.UTC().String()
 }
 
-func (m *UserModel) Save() error {
+func (m *UserModel) Save(ctx *bolo.RequestContext) error {
 	var err error
-	db := bolo.GetDefaultDatabaseConnection()
-	app := bolo.GetApp()
+	db := ctx.App.GetDB()
+	app := ctx.App
 	m.UpdatedAt = app.GetClock().Now()
 
 	if m.ID == 0 {
@@ -318,7 +318,15 @@ func UsersQuery(userList *[]UserModel, limit int) error {
 // FindOne - Find one user record
 func UserFindOne(id string, record *UserModel) error {
 	db := bolo.GetDefaultDatabaseConnection()
-	err := db.First(record, id).Error
+
+	idInt, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return err
+	}
+
+	err = db.
+		Where("id = ?", idInt).
+		First(record).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}

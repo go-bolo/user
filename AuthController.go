@@ -83,6 +83,7 @@ func (ctl *AuthController) GetCurrentUser(c echo.Context) error {
 
 func (ctl *AuthController) Signup(c echo.Context) error {
 	body := SignupBody{}
+	ctx := c.(*bolo.RequestContext)
 
 	if err := c.Bind(&body); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -131,7 +132,7 @@ func (ctl *AuthController) Signup(c echo.Context) error {
 		Phone:       body.Phone,
 	}
 
-	err := userRecord.Save()
+	err := userRecord.Save(ctx)
 	if err != nil {
 		return err // TODO! improve this error handler
 	}
@@ -362,12 +363,14 @@ func (ctl *AuthController) SetPassword(c echo.Context) error {
 }
 
 type ForgotPasswordChange_RequestBody struct {
-	Email string `json:"email" form:"email" validate:"required,email"`
+	Email           string `json:"email" form:"email" validate:"required,email"`
+	ResetPrefixName string `json:"reset_prefix_name" form:"reset_prefix_name"`
 }
 
 // ForgotPassword_Request - step 1 to change password
 func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	body := ForgotPasswordChange_RequestBody{}
 	if err := c.Bind(&body); err != nil {
@@ -416,7 +419,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 				"displayName":      u.DisplayName,
 				"siteName":         system_settings.Get("siteName"),
 				"siteUrl":          ctx.AppOrigin,
-				"resetPasswordUrl": authToken.GetResetUrl(ctx),
+				"resetPasswordUrl": authToken.GetResetUrl(ctx, body.ResetPrefixName, authPlugin.ResetPrefixNames),
 				"token":            authToken.Token,
 			},
 		})
@@ -440,6 +443,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 // ForgotPassword_RequestWithIdentifier - Step 1 to change password
 func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) (err error) {
 	ctx := c.(*bolo.RequestContext)
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	isJson := ctx.GetResponseContentType() == "application/json"
 	if !isJson {
@@ -501,7 +505,7 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 
 		emailSent := false
 		if ctl.App.GetPlugin("emails") != nil {
-			emailSent, err = SendRequestResetPasswordEmail(ctx, authToken, &u)
+			emailSent, err = SendRequestResetPasswordEmail(ctx, authToken, &u, body.ResetPrefixName)
 			if err != nil {
 				return errors.Wrap(err, "AuthController.ForgotPassword_RequestWithIdentifier error on send reset password email")
 			}
@@ -519,7 +523,7 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 			})
 
 			logrus.WithFields(logrus.Fields{
-				"resetTokenURL": authToken.GetResetUrl(ctx),
+				"resetTokenURL": authToken.GetResetUrl(ctx, body.ResetPrefixName, authPlugin.ResetPrefixNames),
 				"user_id":       u.GetID(),
 			}).Warn("AuthController.ForgotPassword_RequestWithIdentifier E-mail not sent, then the reset token url was logged")
 		}
@@ -536,8 +540,9 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 	}, ctx)
 }
 
-func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_models.AuthTokenModel, u *user_models.UserModel) (bool, error) {
+func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_models.AuthTokenModel, u *user_models.UserModel, resetPrefixName string) (bool, error) {
 	var err error
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	userName := u.DisplayName
 	if userName == "" {
@@ -551,7 +556,7 @@ func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_mod
 			"userName":         userName,
 			"siteName":         system_settings.Get("siteName"),
 			"siteUrl":          ctx.AppOrigin,
-			"resetPasswordUrl": authToken.GetResetUrl(ctx),
+			"resetPasswordUrl": authToken.GetResetUrl(ctx, resetPrefixName, authPlugin.ResetPrefixNames),
 			"token":            authToken.Token,
 		},
 	})
@@ -627,9 +632,13 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 		}
 	}
 
-	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+	isJson := ctx.GetResponseContentType() == "application/json"
+	if !isJson {
+		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+		mt.Title = "Resetar senha | Monitor do Mercado"
+	}
+
 	ctx.Title = "Resetar senha"
-	mt.Title = "Resetar senha | Monitor do Mercado"
 
 	if ctx.Request().Method == "POST" {
 		body := ForgotPasswordChange_RequestBody{}
@@ -655,7 +664,6 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 			}
 			return err
 		}
-
 	}
 
 	return bolo.MinifiAndRender(http.StatusOK, "auth/forgot-password-reset-page", &bolo.TemplateCTX{
@@ -663,10 +671,90 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 	}, ctx)
 }
 
-// ForgotPassword_Process - step 3 to change password
-func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
+type ForgotPassword_Process_RequestBody struct {
+	Token        string      `json:"token" form:"token" validate:"required"`
+	UserID       json.Number `json:"userID" form:"userID" validate:"required"`
+	NewPassword  string      `json:"newPassword" form:"newPassword" validate:"required,min=3"`
+	RNewPassword string      `json:"rNewPassword" form:"rNewPassword" validate:"required,eqfield=NewPassword"`
+}
 
-	return nil
+// ForgotPassword_Process - API step 3 to change password with token
+func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
+	ctx := c.(*bolo.RequestContext)
+
+	body := ForgotPassword_Process_RequestBody{}
+	if err := c.Bind(&body); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Debug("AuthController.ForgotPassword_Process error on bind")
+
+		if _, ok := err.(*echo.HTTPError); ok {
+			return err
+		}
+
+		return &bolo.HTTPError{
+			Code:     http.StatusBadRequest,
+			Message:  "invalid param or data format",
+			Internal: errors.Wrap(err, "invalid param or data format"),
+		}
+	}
+
+	if err := c.Validate(body); err != nil {
+		if _, ok := err.(*echo.HTTPError); ok {
+			return err
+		}
+		return err
+	}
+
+	u := user_models.UserModel{}
+	err := user_models.UserFindOne(body.UserID.String(), &u)
+	if err != nil {
+		return errors.Wrap(err, "AuthController.ForgotPassword_Process error on find user")
+	}
+
+	valid, tokenRecord, err := user_models.ValidAuthToken(body.UserID.String(), body.Token)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.Wrap(err, "AuthController.ForgotPassword_Process error on find auth token")
+	}
+
+	if !valid {
+		return &bolo.HTTPError{
+			Code:     http.StatusBadRequest,
+			Message:  "auth.forgot-password.token.invalid",
+			Internal: errors.New("auth.forgot-password.token.invelid token=" + body.Token),
+		}
+	}
+
+	err = u.SetPassword(body.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	err = tokenRecord.Delete()
+	if err != nil {
+		return err
+	}
+
+	// Notify the password change:
+	emails.SendEmailAsync(&emails.EmailOpts{
+		To:           u.Email,
+		TemplateName: "AuthChangePasswordEmail",
+		Variables: emails.TemplateVariables{
+			"displayName": u.DisplayName,
+			"siteName":    system_settings.Get("siteName"),
+			"siteUrl":     ctx.AppOrigin,
+			"username":    u.Username,
+		},
+	})
+
+	ctx.AddResponseMessage(&bolo.ResponseMessage{
+		Message: "Senha alterada com sucesso",
+		Type:    "success",
+	})
+
+	return c.JSON(http.StatusOK, EmptySuccessResponse{
+		Messages: ctx.GetResponseMessages(),
+	})
 }
 
 type NewAuthControllerCFG struct {

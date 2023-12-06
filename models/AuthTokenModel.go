@@ -55,7 +55,13 @@ func (r *AuthTokenModel) Save() error {
 	return nil
 }
 
-func (r *AuthTokenModel) GetResetUrl(ctx *bolo.RequestContext) string {
+func (r *AuthTokenModel) GetResetUrl(ctx *bolo.RequestContext, resetPrefixName string, resetPrefixNames map[string]string) string {
+	if resetPrefixName != "" {
+		if v, found := resetPrefixNames[resetPrefixName]; found {
+			return v + "t=" + r.Token + "&u=" + *r.UserID
+		}
+	}
+
 	baseUrl := ctx.AppOrigin
 	return baseUrl + "/auth/" + *r.UserID + "/forgot-password/reset?t=" + r.Token
 }
