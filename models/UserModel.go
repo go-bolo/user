@@ -34,13 +34,9 @@ type UserModel struct {
 	Language     string `gorm:"column:language;" json:"language" filter:"param:language;type:string"`
 	ConfirmEmail string `gorm:"column:confirmEmail;" json:"confirmEmail"`
 
-	AcceptTerms         bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
-	Birthdate           string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
-	Phone               string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
-	Investments         string `gorm:"column:investments;" json:"investments" filter:"param:investments;type:string"`
-	ReceiveInformations bool   `gorm:"column:receiveInformations;" json:"receiveInformations" filter:"param:receiveInformations;type:bool"`
-	AlreadyInvest       string `gorm:"column:alreadyInvest;" json:"alreadyInvest" filter:"param:alreadyInvest;type:string"`
-	CapitalToInvest     string `gorm:"column:capitalToInvest;" json:"capitalToInvest" filter:"param:capitalToInvest;type:string"`
+	AcceptTerms bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
+	Birthdate   string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
+	Phone       string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
 
 	Roles     []string `gorm:"-" json:"roles"`
 	RolesText string   `gorm:"column:roles;" json:"-"`
@@ -209,22 +205,6 @@ func (r *UserModel) GetBirthdate() string {
 
 func (r *UserModel) GetPhone() string {
 	return r.Phone
-}
-
-func (r *UserModel) GetInvestments() string {
-	return r.Investments
-}
-
-func (r *UserModel) GetReceiveInformationsString() string {
-	return strconv.FormatBool(r.ReceiveInformations)
-}
-
-func (r *UserModel) GetalreadyInvest() string {
-	return r.AlreadyInvest
-}
-
-func (r *UserModel) GetCapitalToInvest() string {
-	return r.CapitalToInvest
 }
 
 func (r *UserModel) GetCreatedAtString() string {
