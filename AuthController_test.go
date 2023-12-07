@@ -36,7 +36,8 @@ func TestAuthController_GetCurrentUser(t *testing.T) {
 	app := NewApp(t)
 	u := GetCurrentUser(t)
 
-	err := u.Save()
+	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
+	err := u.Save(ctx)
 	assert.NoError(t, err)
 	defer u.Delete()
 
@@ -291,7 +292,7 @@ func TestAuthController_Logout(t *testing.T) {
 			ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
 
 			u := GetCurrentUser(t)
-			err := u.Save()
+			err := u.Save(ctx)
 			assert.NoError(t, err)
 			defer u.Delete()
 
@@ -366,7 +367,8 @@ func TestAuthController_ForgotPassword_ResetPage(t *testing.T) {
 	app := NewApp(t)
 	u := GetCurrentUser(t)
 
-	err := u.Save()
+	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
+	err := u.Save(ctx)
 	assert.NoError(t, err)
 	defer u.Delete()
 
@@ -564,7 +566,9 @@ func TestAuthController_ChangePassword(t *testing.T) {
 		Username: gofakeit.Name(),
 		Email:    gofakeit.Email(),
 	}
-	err := u.Save()
+
+	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
+	err := u.Save(ctx)
 	assert.NoError(t, err)
 	defer u.Delete()
 
@@ -717,7 +721,8 @@ func TestAuthController_SetPassword(t *testing.T) {
 		Email:    gofakeit.Email(),
 	}
 	u.SetRole("administrator")
-	u.Save()
+	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
+	u.Save(ctx)
 
 	type fields struct {
 		App bolo.App

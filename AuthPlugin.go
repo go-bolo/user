@@ -17,8 +17,12 @@ import (
 
 type AuthPlugin struct {
 	bolo.Pluginer
-	AuthController    *AuthController
-	SessionController *SessionController
+	// a map with valid reset page prefix:
+	ResetPrefixNames map[string]string
+
+	AuthController         *AuthController
+	SessionController      *SessionController
+	FacebookAuthController *FacebookAuthController
 
 	Name string
 
@@ -36,6 +40,7 @@ func (p *AuthPlugin) Init(app bolo.App) error {
 
 	p.AuthController = NewAuthController(&NewAuthControllerCFG{App: app})
 	p.SessionController = NewSessionController(&NewSessionControllerCFG{App: app})
+	p.FacebookAuthController = NewFacebookAuthController(&NewFacebookAuthControllerCFG{App: app})
 
 	app.GetEvents().On("install", event.ListenerFunc(func(e event.Event) error {
 		InstallAuth(app)
@@ -116,6 +121,10 @@ func (r *AuthPlugin) BindRoutes(app bolo.App) error {
 	router.GET("/:userID/forgot-password/reset", r.AuthController.ForgotPassword_ResetPage)
 	router.POST("/:userID/forgot-password/reset", r.AuthController.ForgotPassword_ResetPage)
 
+	routerV2 := app.SetRouterGroup("auth_v2", "/api/v2/auth")
+	routerV2.POST("/forgot-password/process", r.AuthController.ForgotPassword_Process)
+	routerV2.POST("/change-password", r.AuthController.ChangeOwnPasswordApi)
+
 	mainRouter := app.GetRouter()
 	mainRouter.GET("/login", r.SessionController.LoginPage) // ok
 	mainRouter.POST("/login", r.SessionController.Login)    // ok
@@ -127,6 +136,9 @@ func (r *AuthPlugin) BindRoutes(app bolo.App) error {
 	router.POST("/:userID/new-password", r.AuthController.SetPassword)
 	router.POST("/:userID/set-password", r.AuthController.SetPassword)
 
+	// social auths:
+	fbAuthCtl := r.FacebookAuthController
+	mainRouter.POST("/auth/facebook/app-login-code", fbAuthCtl.LoginWithFacebookAppCode)
 	return nil
 }
 
@@ -181,9 +193,14 @@ func (p *AuthPlugin) GetMigrations() []*bolo.Migration {
 	return []*bolo.Migration{}
 }
 
-type AuthPluginCfgs struct{}
+type AuthPluginCfgs struct {
+	ResetPrefixNames map[string]string
+}
 
 func NewAuthPlugin(cfg *AuthPluginCfgs) *AuthPlugin {
-	p := AuthPlugin{Name: "auth"}
+	p := AuthPlugin{
+		Name:             "auth",
+		ResetPrefixNames: cfg.ResetPrefixNames,
+	}
 	return &p
 }

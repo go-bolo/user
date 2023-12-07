@@ -19,6 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type EmptySuccessResponse struct {
+	Messages []*bolo.ResponseMessage `json:"messages,omitempty"`
+}
+
 type AuthController struct {
 	App bolo.App
 }
@@ -79,6 +83,7 @@ func (ctl *AuthController) GetCurrentUser(c echo.Context) error {
 
 func (ctl *AuthController) Signup(c echo.Context) error {
 	body := SignupBody{}
+	ctx := c.(*bolo.RequestContext)
 
 	if err := c.Bind(&body); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -127,7 +132,7 @@ func (ctl *AuthController) Signup(c echo.Context) error {
 		Phone:       body.Phone,
 	}
 
-	err := userRecord.Save()
+	err := userRecord.Save(ctx)
 	if err != nil {
 		return err // TODO! improve this error handler
 	}
@@ -197,7 +202,7 @@ func (ctl *AuthController) ChangeOwnPassword_Page(c echo.Context) error {
 	}
 
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = "Change password | Monitor do Mercado"
+	mt.Title = "Change password"
 
 	ctx.Title = "Change password"
 
@@ -210,6 +215,97 @@ func (ctl *AuthController) ChangeOwnPassword_Page(c echo.Context) error {
 	return bolo.MinifiAndRender(status, c.Get("template").(string), &bolo.TemplateCTX{
 		Ctx: ctx,
 	}, ctx)
+}
+
+func (ctl *AuthController) ChangeOwnPasswordApi(c echo.Context) error {
+	ctx := c.(*bolo.RequestContext)
+
+	if !ctx.IsAuthenticated {
+		return &bolo.HTTPError{
+			Code:     http.StatusForbidden,
+			Message:  "user should be authenticated",
+			Internal: errors.New("user should be authenticated"),
+		}
+	}
+
+	body := ChangeOwnPasswordBody{}
+
+	if err := c.Bind(&body); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Debug("AuthController.ChangeOwnPasswordApi error on bind")
+
+		if e, ok := err.(*echo.HTTPError); ok {
+			return e
+		} else {
+			return &bolo.HTTPError{
+				Code:     http.StatusBadRequest,
+				Message:  "Invalid data sent",
+				Internal: errors.New("Invalid data sent on ChangeOwnPasswordApi"),
+			}
+		}
+	}
+
+	if err := c.Validate(&body); err != nil {
+		return err
+	}
+
+	record := ctx.AuthenticatedUser.(*user_models.UserModel)
+
+	if body.Password == "" {
+		var passwordRecord user_models.PasswordModel
+		err := user_models.FindPasswordByUserID(record.GetID(), &passwordRecord)
+		if err != nil {
+			return err
+		}
+
+		if passwordRecord.ID != 0 {
+			return &bolo.HTTPError{
+				Code:     http.StatusUnprocessableEntity,
+				Message:  "invalid password",
+				Internal: errors.New("ChangeOwnPassword forbidden: password record not found"),
+			}
+		}
+	} else {
+		valid, err := record.ValidPassword(body.Password)
+		if err != nil {
+			return err
+		}
+
+		if !valid {
+			return &bolo.HTTPError{
+				Code:     http.StatusUnprocessableEntity,
+				Message:  "Invalid password, current password is wrong",
+				Internal: errors.New("ChangeOwnPassword forbidden"),
+			}
+		}
+	}
+
+	err := record.SetPassword(body.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	// Notify the password change:
+	emails.SendEmailAsync(&emails.EmailOpts{
+		To:           record.Email,
+		TemplateName: "AuthChangePasswordEmail",
+		Variables: emails.TemplateVariables{
+			"displayName": record.DisplayName,
+			"siteName":    system_settings.Get("siteName"),
+			"siteUrl":     ctx.AppOrigin,
+			"username":    record.Username,
+		},
+	})
+
+	ctx.AddResponseMessage(&bolo.ResponseMessage{
+		Message: "Senha alterada com sucesso",
+		Type:    "success",
+	})
+
+	return c.JSON(http.StatusOK, EmptySuccessResponse{
+		Messages: ctx.GetResponseMessages(),
+	})
 }
 
 // ChangeOwnPassword - POST endpoint
@@ -279,7 +375,7 @@ func (ctl *AuthController) ChangeOwnPassword(c echo.Context) error {
 		if !valid {
 			return &bolo.HTTPError{
 				Code:     http.StatusUnprocessableEntity,
-				Message:  "Invalid password, current password is wrong",
+				Message:  "Senha inválida, a senha atual está errada",
 				Internal: errors.New("ChangeOwnPassword forbidden"),
 			}
 		}
@@ -358,12 +454,14 @@ func (ctl *AuthController) SetPassword(c echo.Context) error {
 }
 
 type ForgotPasswordChange_RequestBody struct {
-	Email string `json:"email" form:"email" validate:"required,email"`
+	Email           string `json:"email" form:"email" validate:"required,email"`
+	ResetPrefixName string `json:"reset_prefix_name" form:"reset_prefix_name"`
 }
 
 // ForgotPassword_Request - step 1 to change password
 func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	body := ForgotPasswordChange_RequestBody{}
 	if err := c.Bind(&body); err != nil {
@@ -401,7 +499,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 
 	authToken, err := user_models.CreateAuthToken(u.GetID(), "resetPassword")
 	if err != nil {
-		return errors.Wrap(err, "AuthController.ForgotPasswordChange_Request error on create auth token")
+		return errors.Wrap(err, "AuthController.ForgotPasswordChange_Request eJSONrror on create auth token")
 	}
 
 	if ctl.App.GetPlugin("emails") != nil {
@@ -412,7 +510,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 				"displayName":      u.DisplayName,
 				"siteName":         system_settings.Get("siteName"),
 				"siteUrl":          ctx.AppOrigin,
-				"resetPasswordUrl": authToken.GetResetUrl(ctx),
+				"resetPasswordUrl": authToken.GetResetUrl(ctx, body.ResetPrefixName, authPlugin.ResetPrefixNames),
 				"token":            authToken.Token,
 			},
 		})
@@ -436,11 +534,15 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 // ForgotPassword_RequestWithIdentifier - Step 1 to change password
 func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) (err error) {
 	ctx := c.(*bolo.RequestContext)
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
-	ctx.Set("template", "auth/forgot-password-request-with-identifier")
-	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	ctx.Title = "Senha perdida - resetar"
-	mt.Title = "Senha perdida - resetar | Monitor do Mercado"
+	isJson := ctx.GetResponseContentType() == "application/json"
+	if !isJson {
+		ctx.Set("template", "auth/forgot-password-request-with-identifier")
+		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+		mt.Title = "Senha perdida - resetar"
+		ctx.Title = "Senha perdida - resetar"
+	}
 
 	if ctx.Request().Method == "POST" {
 		body := ForgotPasswordChange_RequestBody{}
@@ -494,7 +596,7 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 
 		emailSent := false
 		if ctl.App.GetPlugin("emails") != nil {
-			emailSent, err = SendRequestResetPasswordEmail(ctx, authToken, &u)
+			emailSent, err = SendRequestResetPasswordEmail(ctx, authToken, &u, body.ResetPrefixName)
 			if err != nil {
 				return errors.Wrap(err, "AuthController.ForgotPassword_RequestWithIdentifier error on send reset password email")
 			}
@@ -505,11 +607,22 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 				Message: "E-mail enviado com sucesso. Verifique sua caixa de entrada e siga as instruções para resetar sua senha.",
 				Type:    "success",
 			})
+		} else {
+			ctx.AddResponseMessage(&bolo.ResponseMessage{
+				Message: "O código de login foi criado mas o email não foi enviado, verifique as configurações de email do sistema.",
+				Type:    "warning",
+			})
+
+			logrus.WithFields(logrus.Fields{
+				"resetTokenURL": authToken.GetResetUrl(ctx, body.ResetPrefixName, authPlugin.ResetPrefixNames),
+				"user_id":       u.GetID(),
+			}).Warn("AuthController.ForgotPassword_RequestWithIdentifier E-mail not sent, then the reset token url was logged")
 		}
 
-		switch ctx.GetResponseContentType() {
-		case "application/json":
-			return c.JSON(http.StatusOK, bolo.EmptyResponse{})
+		if isJson {
+			return c.JSON(http.StatusOK, EmptySuccessResponse{
+				Messages: ctx.GetResponseMessages(),
+			})
 		}
 	}
 
@@ -518,8 +631,9 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 	}, ctx)
 }
 
-func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_models.AuthTokenModel, u *user_models.UserModel) (bool, error) {
+func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_models.AuthTokenModel, u *user_models.UserModel, resetPrefixName string) (bool, error) {
 	var err error
+	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	userName := u.DisplayName
 	if userName == "" {
@@ -533,7 +647,7 @@ func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_mod
 			"userName":         userName,
 			"siteName":         system_settings.Get("siteName"),
 			"siteUrl":          ctx.AppOrigin,
-			"resetPasswordUrl": authToken.GetResetUrl(ctx),
+			"resetPasswordUrl": authToken.GetResetUrl(ctx, resetPrefixName, authPlugin.ResetPrefixNames),
 			"token":            authToken.Token,
 		},
 	})
@@ -609,9 +723,13 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 		}
 	}
 
-	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+	isJson := ctx.GetResponseContentType() == "application/json"
+	if !isJson {
+		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
+		mt.Title = "Resetar senha"
+	}
+
 	ctx.Title = "Resetar senha"
-	mt.Title = "Resetar senha | Monitor do Mercado"
 
 	if ctx.Request().Method == "POST" {
 		body := ForgotPasswordChange_RequestBody{}
@@ -637,7 +755,6 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 			}
 			return err
 		}
-
 	}
 
 	return bolo.MinifiAndRender(http.StatusOK, "auth/forgot-password-reset-page", &bolo.TemplateCTX{
@@ -645,10 +762,90 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 	}, ctx)
 }
 
-// ForgotPassword_Process - step 3 to change password
-func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
+type ForgotPassword_Process_RequestBody struct {
+	Token        string      `json:"token" form:"token" validate:"required"`
+	UserID       json.Number `json:"userID" form:"userID" validate:"required"`
+	NewPassword  string      `json:"newPassword" form:"newPassword" validate:"required,min=3"`
+	RNewPassword string      `json:"rNewPassword" form:"rNewPassword" validate:"required,eqfield=NewPassword"`
+}
 
-	return nil
+// ForgotPassword_Process - API step 3 to change password with token
+func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
+	ctx := c.(*bolo.RequestContext)
+
+	body := ForgotPassword_Process_RequestBody{}
+	if err := c.Bind(&body); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Debug("AuthController.ForgotPassword_Process error on bind")
+
+		if _, ok := err.(*echo.HTTPError); ok {
+			return err
+		}
+
+		return &bolo.HTTPError{
+			Code:     http.StatusBadRequest,
+			Message:  "invalid param or data format",
+			Internal: errors.Wrap(err, "invalid param or data format"),
+		}
+	}
+
+	if err := c.Validate(body); err != nil {
+		if _, ok := err.(*echo.HTTPError); ok {
+			return err
+		}
+		return err
+	}
+
+	u := user_models.UserModel{}
+	err := user_models.UserFindOne(body.UserID.String(), &u)
+	if err != nil {
+		return errors.Wrap(err, "AuthController.ForgotPassword_Process error on find user")
+	}
+
+	valid, tokenRecord, err := user_models.ValidAuthToken(body.UserID.String(), body.Token)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.Wrap(err, "AuthController.ForgotPassword_Process error on find auth token")
+	}
+
+	if !valid {
+		return &bolo.HTTPError{
+			Code:     http.StatusBadRequest,
+			Message:  "auth.forgot-password.token.invalid",
+			Internal: errors.New("auth.forgot-password.token.invelid token=" + body.Token),
+		}
+	}
+
+	err = u.SetPassword(body.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	err = tokenRecord.Delete()
+	if err != nil {
+		return err
+	}
+
+	// Notify the password change:
+	emails.SendEmailAsync(&emails.EmailOpts{
+		To:           u.Email,
+		TemplateName: "AuthChangePasswordEmail",
+		Variables: emails.TemplateVariables{
+			"displayName": u.DisplayName,
+			"siteName":    system_settings.Get("siteName"),
+			"siteUrl":     ctx.AppOrigin,
+			"username":    u.Username,
+		},
+	})
+
+	ctx.AddResponseMessage(&bolo.ResponseMessage{
+		Message: "Senha alterada com sucesso",
+		Type:    "success",
+	})
+
+	return c.JSON(http.StatusOK, EmptySuccessResponse{
+		Messages: ctx.GetResponseMessages(),
+	})
 }
 
 type NewAuthControllerCFG struct {

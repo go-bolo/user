@@ -34,13 +34,9 @@ type UserModel struct {
 	Language     string `gorm:"column:language;" json:"language" filter:"param:language;type:string"`
 	ConfirmEmail string `gorm:"column:confirmEmail;" json:"confirmEmail"`
 
-	AcceptTerms         bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
-	Birthdate           string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
-	Phone               string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
-	Investments         string `gorm:"column:investments;" json:"investments" filter:"param:investments;type:string"`
-	ReceiveInformations bool   `gorm:"column:receiveInformations;" json:"receiveInformations" filter:"param:receiveInformations;type:bool"`
-	AlreadyInvest       string `gorm:"column:alreadyInvest;" json:"alreadyInvest" filter:"param:alreadyInvest;type:string"`
-	CapitalToInvest     string `gorm:"column:capitalToInvest;" json:"capitalToInvest" filter:"param:capitalToInvest;type:string"`
+	AcceptTerms bool   `gorm:"column:acceptTerms;" json:"acceptTerms"`
+	Birthdate   string `gorm:"column:birthdate;" json:"birthdate" filter:"param:birthdate;type:date"`
+	Phone       string `gorm:"column:phone;" json:"phone" filter:"param:phone;type:string"`
 
 	Roles     []string `gorm:"-" json:"roles"`
 	RolesText string   `gorm:"column:roles;" json:"-"`
@@ -211,22 +207,6 @@ func (r *UserModel) GetPhone() string {
 	return r.Phone
 }
 
-func (r *UserModel) GetInvestments() string {
-	return r.Investments
-}
-
-func (r *UserModel) GetReceiveInformationsString() string {
-	return strconv.FormatBool(r.ReceiveInformations)
-}
-
-func (r *UserModel) GetalreadyInvest() string {
-	return r.AlreadyInvest
-}
-
-func (r *UserModel) GetCapitalToInvest() string {
-	return r.CapitalToInvest
-}
-
 func (r *UserModel) GetCreatedAtString() string {
 	return r.CreatedAt.UTC().String()
 }
@@ -235,10 +215,10 @@ func (r *UserModel) GetUpdateAtString() string {
 	return r.UpdatedAt.UTC().String()
 }
 
-func (m *UserModel) Save() error {
+func (m *UserModel) Save(ctx *bolo.RequestContext) error {
 	var err error
-	db := bolo.GetDefaultDatabaseConnection()
-	app := bolo.GetApp()
+	db := ctx.App.GetDB()
+	app := ctx.App
 	m.UpdatedAt = app.GetClock().Now()
 
 	if m.ID == 0 {
@@ -318,7 +298,15 @@ func UsersQuery(userList *[]UserModel, limit int) error {
 // FindOne - Find one user record
 func UserFindOne(id string, record *UserModel) error {
 	db := bolo.GetDefaultDatabaseConnection()
-	err := db.First(record, id).Error
+
+	idInt, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return err
+	}
+
+	err = db.
+		Where("id = ?", idInt).
+		First(record).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}

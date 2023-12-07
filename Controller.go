@@ -116,7 +116,7 @@ func (ctl *Controller) Create(c echo.Context) error {
 		"body": body,
 	}).Debug(userControllerLogPrefix + "create params")
 
-	err = record.Save()
+	err = record.Save(ctx)
 	if err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func (ctl *Controller) Update(c echo.Context) error {
 	}
 
 	if record.GetID() == ctx.AuthenticatedUser.GetID() {
-		ctx.AuthenticatedUser.AddRole("owner")
+		ctx.Roles = append(ctx.Roles, "owner")
 	}
 
 	if !ctx.Can("update_user") {
@@ -251,7 +251,7 @@ func (ctl *Controller) Update(c echo.Context) error {
 		return c.NoContent(http.StatusNotFound)
 	}
 
-	err = record.Save()
+	err = record.Save(ctx)
 	if err != nil {
 		return err
 	}
@@ -310,7 +310,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 
 	ctx.Title = "Usuários"
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = "Usuários no Monitor do Mercado"
+	mt.Title = "Usuários"
 
 	var count int64
 	records := []*user_models.UserModel{}
@@ -428,6 +428,7 @@ type UserRolesBodyRequest struct {
 
 func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
 	userID := c.Param("userID")
+	ctx := c.(*bolo.RequestContext)
 
 	var user user_models.UserModel
 	err := user_models.UserFindOne(userID, &user)
@@ -460,7 +461,7 @@ func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
 		return err
 	}
 
-	err = user.Save()
+	err = user.Save(ctx)
 	if err != nil {
 		return errors.Wrap(err, "user.UpdateUserRoles error on save user roles")
 	}
