@@ -310,7 +310,7 @@ func (ctl *Controller) FindAllPageHandler(c echo.Context) error {
 
 	ctx.Title = "Usuários"
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = "Usuários no Monitor do Mercado"
+	mt.Title = "Usuários"
 
 	var count int64
 	records := []*user_models.UserModel{}

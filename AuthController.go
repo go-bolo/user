@@ -202,7 +202,7 @@ func (ctl *AuthController) ChangeOwnPassword_Page(c echo.Context) error {
 	}
 
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-	mt.Title = "Change password | Monitor do Mercado"
+	mt.Title = "Change password"
 
 	ctx.Title = "Change password"
 
@@ -540,7 +540,7 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 	if !isJson {
 		ctx.Set("template", "auth/forgot-password-request-with-identifier")
 		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-		mt.Title = "Senha perdida - resetar | Monitor do Mercado"
+		mt.Title = "Senha perdida - resetar"
 		ctx.Title = "Senha perdida - resetar"
 	}
 
@@ -726,7 +726,7 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 	isJson := ctx.GetResponseContentType() == "application/json"
 	if !isJson {
 		mt := c.Get("metatags").(*metatags.HTMLMetaTags)
-		mt.Title = "Resetar senha | Monitor do Mercado"
+		mt.Title = "Resetar senha"
 	}
 
 	ctx.Title = "Resetar senha"

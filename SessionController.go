@@ -46,7 +46,7 @@ func (ctl *SessionController) LoginPage(c echo.Context) error {
 	mt := c.Get("metatags").(*metatags.HTMLMetaTags)
 
 	ctx.Title = "Login"
-	mt.Title = "Login | Monitor do Mercado"
+	mt.Title = "Login"
 
 	status := http.StatusOK
 	switch c.Get("status").(type) {
