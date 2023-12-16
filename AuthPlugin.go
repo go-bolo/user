@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/go-bolo/bolo"
@@ -160,9 +161,10 @@ func (p *AuthPlugin) OnHTTPError(app bolo.App, e event.Event) error {
 
 	switch e := err.(type) {
 	case *bolo.HTTPError:
+		msg := fmt.Sprintf("%s", e.GetMessage())
 		AddFlashMessage(c, &FlashMessage{
 			Type:    "error",
-			Message: e.GetMessage().(string),
+			Message: msg,
 		})
 
 		return nil
