@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-bolo/bolo"
+	user_helpers "github.com/go-bolo/user/helpers"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
@@ -50,7 +51,7 @@ func initRedisSession() {
 	}
 }
 
-func SetUserSession(c echo.Context, user bolo.UserInterface) (*sessions.Session, error) {
+func SetUserSession(app bolo.App, c echo.Context, user bolo.UserInterface) (*sessions.Session, error) {
 	sess, err := session.Get("session", c)
 	if err != nil {
 		if !strings.Contains(err.Error(), "session store not found") {
@@ -58,10 +59,7 @@ func SetUserSession(c echo.Context, user bolo.UserInterface) (*sessions.Session,
 		}
 	}
 
-	ctx := c.(*bolo.RequestContext)
-	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
-
-	sess.Options = authPlugin.SessionOptions
+	sess.Options = user_helpers.GetSessionOptions(app)
 
 	sess.Values["uid"] = user.GetID()
 	err = sess.Save(c.Request(), c.Response())

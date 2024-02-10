@@ -27,9 +27,8 @@ type AuthPlugin struct {
 
 	Name string
 
-	SessionStore   sessions.Store // TODO! add more session store options as plugins
-	SessionOptions *sessions.Options
-	SessionResave  bool
+	SessionStore  sessions.Store // TODO! add more session store options as plugins
+	SessionResave bool
 }
 
 func (p *AuthPlugin) GetName() string {
@@ -89,13 +88,6 @@ func (p *AuthPlugin) bindMiddlewares(app bolo.App) error {
 	}
 
 	p.SessionStore = store
-
-	p.SessionOptions = &sessions.Options{
-		Path:     cfgs.GetF("SITE_SESSION_PATH", "/"),
-		MaxAge:   cfgs.GetIntF("SITE_SESSION_MAX_AGE", 86400*7),
-		HttpOnly: cfgs.GetBoolF("SITE_SESSION_HTTP_ONLY", false),
-	}
-
 	p.SessionResave = cfgs.GetBoolF("SITE_SESSION_RESAVE", true)
 
 	router := app.GetRouter()

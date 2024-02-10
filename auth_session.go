@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-bolo/bolo"
+	user_helpers "github.com/go-bolo/user/helpers"
 	user_models "github.com/go-bolo/user/models"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
@@ -97,7 +98,9 @@ func sessionAuthenticationHandler(c echo.Context) error {
 	}
 
 	if authPlugin.SessionResave && c.Request().Method == http.MethodGet {
-		sess.Options = authPlugin.SessionOptions
+
+		sess.Options = user_helpers.GetSessionOptions(ctx.App)
+
 		err = sess.Save(c.Request(), c.Response())
 		if err != nil {
 			logrus.WithFields(logrus.Fields{

@@ -123,7 +123,7 @@ func (ctl *SessionController) Login(c echo.Context) error {
 		return err
 	}
 
-	_, err = SetUserSession(c, &userRecord)
+	_, err = SetUserSession(ctx.App, c, &userRecord)
 	if err != nil {
 		return err
 	}
