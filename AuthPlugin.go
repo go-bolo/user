@@ -83,8 +83,6 @@ func (p *AuthPlugin) bindMiddlewares(app bolo.App) error {
 
 	cfgs := app.GetConfiguration()
 
-	cfgs.GetBoolF("SITE_SESSION_RESAVE", true)
-
 	store, err := redisstore.NewRedisStore(context.Background(), SessionDBWriter)
 	if err != nil {
 		log.Fatal("failed to create redis store: ", err)

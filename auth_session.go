@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -95,7 +96,7 @@ func sessionAuthenticationHandler(c echo.Context) error {
 		ctx.IsAuthenticated = true
 	}
 
-	if authPlugin.SessionResave {
+	if authPlugin.SessionResave && c.Request().Method == http.MethodGet {
 		sess.Options = authPlugin.SessionOptions
 		err = sess.Save(c.Request(), c.Response())
 		if err != nil {
