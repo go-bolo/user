@@ -12,6 +12,7 @@ import (
 	user_models "github.com/go-bolo/user/models"
 	user_oauth2_password "github.com/go-bolo/user/oauth2_password"
 	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/facebook"
 )
@@ -43,6 +44,10 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 
 	token, err := OAuth2Config.Exchange(context.Background(), body.Code)
 	if err != nil || token == nil {
+		logrus.WithFields(logrus.Fields{
+			"err": err,
+		}).Error("LoginWithFacebookAppCode: error on exchange token")
+
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
@@ -52,6 +57,10 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 
 	fbUserDetails, fbUserDetailsError := GetUserInfoFromFacebook(token.AccessToken, ctx)
 	if fbUserDetailsError != nil {
+		logrus.WithFields(logrus.Fields{
+			"err": err,
+		}).Error("LoginWithFacebookAppCode: error on get user info from facebook")
+
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
@@ -61,6 +70,10 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 
 	u, authTokenError := FindOrCreateUserFromFacebook(fbUserDetails, ctx)
 	if authTokenError != nil {
+		logrus.WithFields(logrus.Fields{
+			"err": err,
+		}).Error("LoginWithFacebookAppCode: error on sign in user")
+
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
@@ -69,6 +82,10 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 	}
 
 	if authTokenError != nil {
+		logrus.WithFields(logrus.Fields{
+			"err": err,
+		}).Error("LoginWithFacebookAppCode: error on sign in user")
+
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
@@ -79,6 +96,10 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 	// Authenticate user:
 	data, err := user_oauth2_password.Oauth2GenerateAndSaveToken(ctx, u)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"err": err,
+		}).Error("LoginWithFacebookAppCode: error on generate and save token")
+
 		return &bolo.HTTPError{
 			Code:     http.StatusBadRequest,
 			Message:  "Invalid token",
