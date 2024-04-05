@@ -183,7 +183,7 @@ func (ctl *Controller) FindOne(c echo.Context) error {
 
 	if ctx.IsAuthenticated {
 		if record.GetID() == ctx.AuthenticatedUser.GetID() {
-			ctx.AuthenticatedUser.AddRole("owner")
+			ctx.Roles = append(ctx.Roles, "owner")
 		}
 	}
 
@@ -284,7 +284,7 @@ func (ctl *Controller) Delete(c echo.Context) error {
 	}
 
 	if record.GetID() == ctx.AuthenticatedUser.GetID() {
-		ctx.AuthenticatedUser.AddRole("owner")
+		ctx.Roles = append(ctx.Roles, "owner")
 	}
 
 	if !ctx.Can("delete_user") {
