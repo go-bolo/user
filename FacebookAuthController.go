@@ -73,8 +73,9 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 		d, _ := json.Marshal(fbUserDetails)
 
 		logrus.WithFields(logrus.Fields{
-			"err":  err,
-			"data": d,
+			"err":           err,
+			"fbUserDetails": string(d),
+			"u":             u,
 		}).Error("LoginWithFacebookAppCode: error on FindOrCreateUserFromFacebook")
 
 		return &bolo.HTTPError{
@@ -179,11 +180,14 @@ func GetFacebookOAuthConfig(ctx *bolo.RequestContext) *oauth2.Config {
 // GetUserInfoFromFacebook will return information of user which is fetched from facebook
 func GetUserInfoFromFacebook(token string, ctx *bolo.RequestContext) (FacebookUserDetails, error) {
 	var fbUserDetails FacebookUserDetails
-	facebookUserDetailsRequest, _ := http.NewRequest("GET", "https://graph.facebook.com/me?fields=id,name,email&access_token="+token, nil)
+	facebookUserDetailsRequest, err := http.NewRequest("GET", "https://graph.facebook.com/me?fields=id,name,email&access_token="+token, nil)
 	facebookUserDetailsResponse, facebookUserDetailsResponseError := http.DefaultClient.Do(facebookUserDetailsRequest)
+	if err != nil {
+		return FacebookUserDetails{}, fmt.Errorf("error occurred while getting information from facebook: %w", err)
+	}
 
 	if facebookUserDetailsResponseError != nil {
-		return FacebookUserDetails{}, errors.New("error occurred while getting information from facebook")
+		return FacebookUserDetails{}, fmt.Errorf("error occurred while getting information from facebook response: %w", facebookUserDetailsResponseError)
 	}
 
 	decoder := json.NewDecoder(facebookUserDetailsResponse.Body)
@@ -191,7 +195,7 @@ func GetUserInfoFromFacebook(token string, ctx *bolo.RequestContext) (FacebookUs
 	defer facebookUserDetailsResponse.Body.Close()
 
 	if decoderErr != nil {
-		return FacebookUserDetails{}, errors.New("error occurred while getting information from facebook")
+		return FacebookUserDetails{}, fmt.Errorf("error occurred while decoding information from facebook: %w", decoderErr)
 	}
 
 	return fbUserDetails, nil
@@ -199,10 +203,6 @@ func GetUserInfoFromFacebook(token string, ctx *bolo.RequestContext) (FacebookUs
 
 // SignInUser Used for Signing In the Users
 func FindOrCreateUserFromFacebook(facebookUserDetails FacebookUserDetails, ctx *bolo.RequestContext) (*user_models.UserModel, error) {
-	if facebookUserDetails == (FacebookUserDetails{}) {
-		return nil, errors.New("FindOrCreateUserFromFacebook user details can't be empty")
-	}
-
 	if facebookUserDetails.Email == "" {
 		return nil, errors.New("FindOrCreateUserFromFacebook last name can't be empty")
 	}
