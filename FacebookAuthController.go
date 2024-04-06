@@ -51,7 +51,7 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
-			Internal: fmt.Errorf("error on exchange token: %v", err),
+			Internal: fmt.Errorf("error on exchange token: %w", err),
 		}
 	}
 
@@ -64,32 +64,23 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
-			Internal: fmt.Errorf("error on get user info from facebook: %v", fbUserDetailsError),
+			Internal: fmt.Errorf("error on get user info from facebook: %w", fbUserDetailsError),
 		}
 	}
 
 	u, authTokenError := FindOrCreateUserFromFacebook(fbUserDetails, ctx)
 	if authTokenError != nil {
+		d, _ := json.Marshal(fbUserDetails)
+
 		logrus.WithFields(logrus.Fields{
-			"err": err,
-		}).Error("LoginWithFacebookAppCode: error on sign in user")
+			"err":  err,
+			"data": d,
+		}).Error("LoginWithFacebookAppCode: error on FindOrCreateUserFromFacebook")
 
 		return &bolo.HTTPError{
 			Code:     http.StatusUnauthorized,
 			Message:  "Invalid token",
-			Internal: fmt.Errorf("error on sign in user: %v", authTokenError),
-		}
-	}
-
-	if authTokenError != nil {
-		logrus.WithFields(logrus.Fields{
-			"err": err,
-		}).Error("LoginWithFacebookAppCode: error on sign in user")
-
-		return &bolo.HTTPError{
-			Code:     http.StatusUnauthorized,
-			Message:  "Invalid token",
-			Internal: fmt.Errorf("error on sign in user: %v", authTokenError),
+			Internal: fmt.Errorf("FindOrCreateUserFromFacebook: %w", authTokenError),
 		}
 	}
 
@@ -103,7 +94,7 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 		return &bolo.HTTPError{
 			Code:     http.StatusBadRequest,
 			Message:  "Invalid token",
-			Internal: fmt.Errorf("error on generate and save token: %v", err),
+			Internal: fmt.Errorf("error on generate and save token: %w", err),
 		}
 	}
 
@@ -209,21 +200,21 @@ func GetUserInfoFromFacebook(token string, ctx *bolo.RequestContext) (FacebookUs
 // SignInUser Used for Signing In the Users
 func FindOrCreateUserFromFacebook(facebookUserDetails FacebookUserDetails, ctx *bolo.RequestContext) (*user_models.UserModel, error) {
 	if facebookUserDetails == (FacebookUserDetails{}) {
-		return nil, errors.New("user details can't be empty")
+		return nil, errors.New("FindOrCreateUserFromFacebook user details can't be empty")
 	}
 
 	if facebookUserDetails.Email == "" {
-		return nil, errors.New("last name can't be empty")
+		return nil, errors.New("FindOrCreateUserFromFacebook last name can't be empty")
 	}
 
 	if facebookUserDetails.Name == "" {
-		return nil, errors.New("password can't be empty")
+		return nil, errors.New("FindOrCreateUserFromFacebook password can't be empty")
 	}
 
 	u := user_models.UserModel{}
 	err := user_models.UserFindOneByUsername(facebookUserDetails.Email, &u)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, errors.New("FindOrCreateUserFromFacebook user not found")
 	}
 
 	if u.ID == 0 {
@@ -237,7 +228,7 @@ func FindOrCreateUserFromFacebook(facebookUserDetails FacebookUserDetails, ctx *
 
 		err = u.Save(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error on save user: %v", err)
+			return nil, fmt.Errorf("FindOrCreateUserFromFacebook error on save user: %w", err)
 		}
 	}
 

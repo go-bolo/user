@@ -2,7 +2,6 @@ package user
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -516,13 +515,13 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 		})
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
-				"error": fmt.Errorf("%+v", err),
+				"error": err,
 			}).Error("AuthController.ForgotPasswordChange_Request error on create email")
 		} else {
 			err = email.Send()
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
-					"error": fmt.Errorf("%+v", err),
+					"error": err,
 				}).Error("AuthController.ForgotPasswordChange_Request error on send email")
 			}
 		}
@@ -653,14 +652,14 @@ func SendRequestResetPasswordEmail(ctx *bolo.RequestContext, authToken *user_mod
 	})
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error": fmt.Errorf("%+v", err),
+			"error": err,
 		}).Error("AuthController.ForgotPassword_RequestWithIdentifier error on create email")
 		return false, err
 	}
 	err = email.QueueToSend()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error": fmt.Errorf("%+v", err),
+			"error": err,
 		}).Error("AuthController.ForgotPassword_RequestWithIdentifier error on QueueToSend email")
 		return false, nil
 	}

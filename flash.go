@@ -25,7 +25,7 @@ type FlashMessages []*FlashMessage
 func AddFlashMessage(c echo.Context, m *FlashMessage) error {
 	sess, err := session.Get("session", c)
 	if err != nil {
-		return fmt.Errorf("AddFlashMessage: error on get session:%w", err)
+		return fmt.Errorf("AddFlashMessage: error on get session: %w", err)
 	}
 
 	sess.AddFlash(m.ToJSON(), "messages")
@@ -35,7 +35,7 @@ func AddFlashMessage(c echo.Context, m *FlashMessage) error {
 func GetFlashMessages(c echo.Context) (messages FlashMessages, err error) {
 	sess, err := session.Get("session", c)
 	if err != nil {
-		return nil, fmt.Errorf("GetFlashMessages: error on get session:%w", err)
+		return nil, fmt.Errorf("GetFlashMessages: error on get session: %w", err)
 	}
 
 	fls := sess.Flashes("messages")
