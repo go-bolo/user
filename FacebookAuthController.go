@@ -73,7 +73,7 @@ func (ctl *FacebookAuthController) LoginWithFacebookAppCode(c echo.Context) erro
 		d, _ := json.Marshal(fbUserDetails)
 
 		logrus.WithFields(logrus.Fields{
-			"err":           err,
+			"err":           authTokenError,
 			"fbUserDetails": string(d),
 			"u":             u,
 		}).Error("LoginWithFacebookAppCode: error on FindOrCreateUserFromFacebook")
