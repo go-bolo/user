@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/facebook"
+	"gorm.io/gorm"
 )
 
 type FacebookAuthController struct {
@@ -213,7 +214,7 @@ func FindOrCreateUserFromFacebook(facebookUserDetails FacebookUserDetails, ctx *
 
 	u := user_models.UserModel{}
 	err := user_models.UserFindOneByUsername(facebookUserDetails.Email, &u)
-	if err != nil {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New("FindOrCreateUserFromFacebook user not found")
 	}
 
