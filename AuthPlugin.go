@@ -68,6 +68,11 @@ func (p *AuthPlugin) Init(app bolo.App) error {
 		return p.OnHTTPError(app, e)
 	}), event.Normal)
 
+	// on bootstrap
+	app.GetEvents().On("bootstrap", event.ListenerFunc(func(e event.Event) error {
+		return p.Bootstrap(app)
+	}), event.High)
+
 	app.GetEvents().On("close", event.ListenerFunc(func(e event.Event) error {
 		return p.OnClose(app)
 	}), event.Normal)
@@ -168,6 +173,14 @@ func (p *AuthPlugin) OnHTTPError(app bolo.App, e event.Event) error {
 			})
 		}
 	}
+
+	return nil
+}
+
+func (p *AuthPlugin) Bootstrap(app bolo.App) error {
+	logrus.Debug("AuthPlugin.Bootstrap " + p.GetName())
+
+	AddEmailTemplates(app)
 
 	return nil
 }
