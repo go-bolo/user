@@ -533,6 +533,7 @@ func (ctl *AuthController) ForgotPassword_Request(c echo.Context) error {
 // ForgotPassword_RequestWithIdentifier - Step 1 to change password
 func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) (err error) {
 	ctx := c.(*bolo.RequestContext)
+
 	authPlugin := ctx.App.GetPlugin("auth").(*AuthPlugin)
 
 	isJson := ctx.GetResponseContentType() == "application/json"
@@ -575,6 +576,17 @@ func (ctl *AuthController) ForgotPassword_RequestWithIdentifier(c echo.Context) 
 		}
 
 		if u.ID == 0 {
+			if isJson {
+				return c.JSON(http.StatusOK, EmptySuccessResponse{
+					Messages: []*bolo.ResponseMessage{
+						{
+							Message: "If the email is correct, a reset password token was created and sent to your email. Check your inbox and follow the instructions to reset your password.",
+							Type:    "success",
+						},
+					},
+				})
+			}
+
 			return bolo.MinifiAndRender(http.StatusOK, ctx.Get("template").(string), &bolo.TemplateCTX{
 				Ctx: ctx,
 			}, ctx)
