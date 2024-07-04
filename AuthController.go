@@ -856,7 +856,7 @@ func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
 	})
 
 	if body.RedirectOnSucess != "" {
-		return c.Redirect(http.StatusFound, "/")
+		return c.Redirect(http.StatusFound, body.RedirectOnSucess)
 	}
 
 	return c.JSON(http.StatusOK, EmptySuccessResponse{
