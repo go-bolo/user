@@ -774,10 +774,11 @@ func (ctl *AuthController) ForgotPassword_ResetPage(c echo.Context) error {
 }
 
 type ForgotPassword_Process_RequestBody struct {
-	Token        string      `json:"token" form:"token" validate:"required"`
-	UserID       json.Number `json:"userID" form:"userID" validate:"required"`
-	NewPassword  string      `json:"newPassword" form:"newPassword" validate:"required,min=3"`
-	RNewPassword string      `json:"rNewPassword" form:"rNewPassword" validate:"required,eqfield=NewPassword"`
+	Token            string      `json:"token" form:"token" validate:"required"`
+	UserID           json.Number `json:"userID" form:"userID" validate:"required"`
+	NewPassword      string      `json:"newPassword" form:"newPassword" validate:"required,min=3"`
+	RNewPassword     string      `json:"rNewPassword" form:"rNewPassword" validate:"required,eqfield=NewPassword"`
+	RedirectOnSucess string      `json:"redirectOnSucess" form:"redirectOnSucess"`
 }
 
 // ForgotPassword_Process - API step 3 to change password with token
@@ -853,6 +854,10 @@ func (ctl *AuthController) ForgotPassword_Process(c echo.Context) error {
 		Message: "Senha alterada com sucesso",
 		Type:    "success",
 	})
+
+	if body.RedirectOnSucess != "" {
+		return c.Redirect(http.StatusFound, body.RedirectOnSucess)
+	}
 
 	return c.JSON(http.StatusOK, EmptySuccessResponse{
 		Messages: ctx.GetResponseMessages(),
