@@ -15,7 +15,7 @@ func GetInitMigration() *bolo.Migration {
 	}{
 		{
 			table: "users",
-			up: `CREATE TABLE users (
+			up: `CREATE TABLE IF NOT EXISTS users (
 				id int NOT NULL AUTO_INCREMENT,
 				username varchar(191) DEFAULT NULL,
 				displayName longtext,
@@ -47,7 +47,7 @@ func GetInitMigration() *bolo.Migration {
 		},
 		{
 			table: "passwords",
-			up: `CREATE TABLE passwords (
+			up: `CREATE TABLE IF NOT EXISTS passwords (
 				id int NOT NULL AUTO_INCREMENT,
 				userId bigint DEFAULT NULL,
 				active tinyint(1) DEFAULT '1',
@@ -59,7 +59,7 @@ func GetInitMigration() *bolo.Migration {
 		},
 		{
 			table: "authtokens",
-			up: `CREATE TABLE authtokens (
+			up: `CREATE TABLE IF NOT EXISTS authtokens (
 				id int NOT NULL AUTO_INCREMENT,
 				userId bigint NOT NULL,
 				providerUserId bigint DEFAULT NULL,
