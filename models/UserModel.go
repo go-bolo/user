@@ -221,6 +221,11 @@ func (m *UserModel) Save(ctx *bolo.RequestContext) error {
 	app := ctx.App
 	m.UpdatedAt = app.GetClock().Now()
 
+	if len(m.Roles) > 0 {
+		jsonString, _ := json.Marshal(m.Roles)
+		m.RolesText = string(jsonString)
+	}
+
 	if m.ID == 0 {
 		m.CreatedAt = clock.New().Now()
 		// create ....
