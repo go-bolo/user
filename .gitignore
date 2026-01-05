@@ -11,3 +11,4 @@ mm
 development.env
 tmp
 gcloud.json
+*.received.txt
