@@ -63,7 +63,7 @@ func (r *AuthTokenModel) GetResetUrl(ctx *bolo.RequestContext, resetPrefixName s
 	}
 
 	baseUrl := ctx.AppOrigin
-	return baseUrl + "/auth/" + *r.UserID + "/forgot-password/reset?t=" + r.Token
+	return baseUrl + "/auth/" + *r.UserID + "/forgot-password/reset?t=" + r.Token + "&u=" + *r.UserID
 }
 
 func FindInvalidOldUserTokens(uid string) ([]*AuthTokenModel, error) {
