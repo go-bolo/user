@@ -76,6 +76,26 @@ func AuthenticationOauth2PasswordHandler(c echo.Context) error {
 		return err
 	}
 
+	// Mesma semântica do handler do mm (consumidor da rota): inativo/bloqueado
+	// não recebe par de tokens, mesmo com senha válida.
+	if !userRecord.Active {
+		result := oauth2PasswordJSONResponseError{}
+		result.Messages = append(result.Messages, bolo.BaseErrorResponseMessage{
+			Status:  "warning",
+			Message: "Conta não ativada. Por favor, verifique seu email para ativar sua conta.",
+		})
+		return c.JSON(http.StatusForbidden, &result)
+	}
+
+	if userRecord.Blocked {
+		result := oauth2PasswordJSONResponseError{}
+		result.Messages = append(result.Messages, bolo.BaseErrorResponseMessage{
+			Status:  "danger",
+			Message: "Conta bloqueada. Entre em contato com o suporte.",
+		})
+		return c.JSON(http.StatusForbidden, &result)
+	}
+
 	data, err := Oauth2GenerateAndSaveToken(ctx, &userRecord)
 	if err != nil {
 		return err
