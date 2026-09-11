@@ -49,9 +49,10 @@ func (r *Oauth2PasswordPlugin) BindRoutes(app bolo.App) error {
 
 	router := app.SetRouterGroup("auth", "/auth")
 	router.POST("/grant-password/authenticate", AuthenticationOauth2PasswordHandler)
-	// router.POST("/auth/logout", HealthCheck)
-	// router.POST("/auth/forgot-password", HealthCheck)
-	// router.GET("/auth/forgot-password", HealthCheck)
+	// revogação de tokens (RFC 7009). OBS: a rota de refresh-token
+	// (/grant-password/refresh-token) é registrada pelo consumidor (ex.: mm)
+	// para evitar disputa de rota no echo.
+	router.POST("/grant-password/revoke", RevokeOauth2TokenHandler)
 
 	return nil
 }
