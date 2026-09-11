@@ -1,0 +1,16 @@
+{
+  "config": {
+    "docs": {
+      "root": "docs",
+      "specFile": "spec.md",
+      "guideFile": "guide.md",
+      "uiFile": null,
+      "changelogFile": "changelog.md",
+      "changesDir": "changes",
+      "archiveDir": "archive",
+      "changeFilenamePattern": "<date>-<change-id>-plan.md",
+      "defaultStatus": "draft",
+      "allowedStatuses": ["draft", "review", "published", "deprecated"]
+    }
+  }
+}
