@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -31,13 +31,13 @@ func craftToken(t *testing.T, cfg *auth_oauth2_jwt.Config, opt tokenOption) stri
 	claims := auth_oauth2_jwt.AccessClaims{
 		Roles:  []string{"authenticated"},
 		Active: true,
-		StandardClaims: jwt.StandardClaims{
-			Audience:  cfg.Audience,
-			ExpiresAt: time.Now().Add(cfg.TTL).Unix(),
-			Id:        uuid.New().String(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.TTL)),
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    cfg.Issuer,
-			NotBefore: time.Now().Unix(),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 			Subject:   "42",
 		},
 	}
@@ -123,7 +123,7 @@ func TestValidateAccessToken(t *testing.T) {
 			name: "exp ausente rejeita fail-closed",
 			build: func(t *testing.T) string {
 				return craftToken(t, cfg, tokenOption{mutateClaims: func(c *auth_oauth2_jwt.AccessClaims) {
-					c.ExpiresAt = 0
+					c.ExpiresAt = nil
 				}})
 			},
 			wantErr:   true,
@@ -142,7 +142,7 @@ func TestValidateAccessToken(t *testing.T) {
 			name: "audience diferente da configurada",
 			build: func(t *testing.T) string {
 				return craftToken(t, cfg, tokenOption{mutateClaims: func(c *auth_oauth2_jwt.AccessClaims) {
-					c.Audience = "outro-app"
+					c.Audience = jwt.ClaimStrings{"outro-app"}
 				}})
 			},
 			wantErr: true,
@@ -169,7 +169,7 @@ func TestValidateAccessToken(t *testing.T) {
 			name: "jti vazio",
 			build: func(t *testing.T) string {
 				return craftToken(t, cfg, tokenOption{mutateClaims: func(c *auth_oauth2_jwt.AccessClaims) {
-					c.Id = ""
+					c.ID = ""
 				}})
 			},
 			wantErr: true,
@@ -178,7 +178,7 @@ func TestValidateAccessToken(t *testing.T) {
 			name: "nbf no futuro além do leeway",
 			build: func(t *testing.T) string {
 				return craftToken(t, cfg, tokenOption{mutateClaims: func(c *auth_oauth2_jwt.AccessClaims) {
-					c.NotBefore = time.Now().Add(5 * time.Minute).Unix()
+					c.NotBefore = jwt.NewNumericDate(time.Now().Add(5 * time.Minute))
 				}})
 			},
 			wantErr: true,
@@ -187,7 +187,7 @@ func TestValidateAccessToken(t *testing.T) {
 			name: "iat no futuro além do leeway",
 			build: func(t *testing.T) string {
 				return craftToken(t, cfg, tokenOption{mutateClaims: func(c *auth_oauth2_jwt.AccessClaims) {
-					c.IssuedAt = time.Now().Add(5 * time.Minute).Unix()
+					c.IssuedAt = jwt.NewNumericDate(time.Now().Add(5 * time.Minute))
 				}})
 			},
 			wantErr: true,
@@ -346,7 +346,7 @@ func TestBuildUserStubFromClaims_Table(t *testing.T) {
 				Roles:   []string{"administrator", "premium"},
 				Active:  true,
 				Blocked: false,
-				StandardClaims: jwt.StandardClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
 					Subject: "42",
 				},
 			},
@@ -359,7 +359,7 @@ func TestBuildUserStubFromClaims_Table(t *testing.T) {
 			claims: &auth_oauth2_jwt.AccessClaims{
 				Active:  false,
 				Blocked: true,
-				StandardClaims: jwt.StandardClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
 					Subject: "7",
 				},
 			},
@@ -370,7 +370,7 @@ func TestBuildUserStubFromClaims_Table(t *testing.T) {
 			name: "subject não numérico zera o ID",
 			claims: &auth_oauth2_jwt.AccessClaims{
 				Active: true,
-				StandardClaims: jwt.StandardClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
 					Subject: "abc",
 				},
 			},
@@ -381,7 +381,7 @@ func TestBuildUserStubFromClaims_Table(t *testing.T) {
 			name: "roles vazia devolve RolesText null",
 			claims: &auth_oauth2_jwt.AccessClaims{
 				Active: true,
-				StandardClaims: jwt.StandardClaims{
+				RegisteredClaims: jwt.RegisteredClaims{
 					Subject: "9",
 				},
 			},

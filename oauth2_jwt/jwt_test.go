@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
@@ -66,8 +66,8 @@ func TestGenerateAccessToken_HappyPath(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("42", claims.Subject)
 	assert.Equal(cfg.Issuer, claims.Issuer)
-	assert.Equal(cfg.Audience, claims.Audience)
-	assert.NotEmpty(claims.Id)
+	assert.Equal(jwt.ClaimStrings{cfg.Audience}, claims.Audience)
+	assert.NotEmpty(claims.ID)
 	assert.Equal([]string{"authenticated", "premium"}, claims.Roles)
 	assert.True(claims.Active)
 	assert.False(claims.Blocked)
@@ -77,8 +77,8 @@ func TestGenerateAccessToken_HappyPath(t *testing.T) {
 	assert.NoError(err)
 	claims2, err := auth_oauth2_jwt.ValidateAccessToken(cfg, token2)
 	assert.NoError(err)
-	assert.NotEqual(claims.Id, claims2.Id)
-	_, err = uuid.Parse(claims.Id)
+	assert.NotEqual(claims.ID, claims2.ID)
+	_, err = uuid.Parse(claims.ID)
 	assert.NoError(err)
 
 	// snapshot bloqueado entra no claim
@@ -140,13 +140,13 @@ func TestValidateAccessToken_RejectsAlgNone(t *testing.T) {
 
 	// token alg:none sem assinatura, claims válidos
 	claims := auth_oauth2_jwt.AccessClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  cfg.Audience,
-			ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
-			Id:        uuid.New().String(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    cfg.Issuer,
-			NotBefore: time.Now().Unix(),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 			Subject:   "42",
 		},
 	}
@@ -164,13 +164,13 @@ func TestValidateAccessToken_RejectsAlgorithmConfusion(t *testing.T) {
 	cfg := unitConfig()
 
 	claims := auth_oauth2_jwt.AccessClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  cfg.Audience,
-			ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
-			Id:        uuid.New().String(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    cfg.Issuer,
-			NotBefore: time.Now().Unix(),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 			Subject:   "42",
 		},
 	}
@@ -212,13 +212,13 @@ func TestValidateAccessToken_RejectsWrongSecretAndKid(t *testing.T) {
 
 	// kid desconhecido com assinatura correta
 	claims := auth_oauth2_jwt.AccessClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  cfg.Audience,
-			ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
-			Id:        uuid.New().String(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    cfg.Issuer,
-			NotBefore: time.Now().Unix(),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 			Subject:   "42",
 		},
 	}
@@ -236,13 +236,13 @@ func TestValidateAccessToken_RejectsWrongIssuerAudienceAndMissingClaims(t *testi
 
 	craft := func(mutate func(*auth_oauth2_jwt.AccessClaims)) string {
 		c := auth_oauth2_jwt.AccessClaims{
-			StandardClaims: jwt.StandardClaims{
-				Audience:  cfg.Audience,
-				ExpiresAt: time.Now().Add(10 * time.Minute).Unix(),
-				Id:        uuid.New().String(),
-				IssuedAt:  time.Now().Unix(),
+			RegisteredClaims: jwt.RegisteredClaims{
+				Audience:  jwt.ClaimStrings{cfg.Audience},
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+				ID:        uuid.New().String(),
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
 				Issuer:    cfg.Issuer,
-				NotBefore: time.Now().Unix(),
+				NotBefore: jwt.NewNumericDate(time.Now()),
 				Subject:   "42",
 			},
 		}
@@ -258,13 +258,13 @@ func TestValidateAccessToken_RejectsWrongIssuerAudienceAndMissingClaims(t *testi
 	_, err := auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Issuer = "https://evil.example" }))
 	assert.Error(err, "issuer errado deve ser rejeitado")
 
-	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Audience = "outro-app" }))
+	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Audience = jwt.ClaimStrings{"outro-app"} }))
 	assert.Error(err, "audience errada deve ser rejeitada")
 
 	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Subject = "" }))
 	assert.Error(err, "subject vazio deve ser rejeitado")
 
-	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Id = "" }))
+	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.ID = "" }))
 	assert.Error(err, "jti vazio deve ser rejeitado")
 
 	_, err = auth_oauth2_jwt.ValidateAccessToken(cfg, craft(func(c *auth_oauth2_jwt.AccessClaims) { c.Subject = "não-é-número" }))

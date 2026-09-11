@@ -75,4 +75,4 @@ Unlike browser flows based on cookie sessions (see [../sessions/guide.md](../ses
 - Authentication feature (login/logout, `/auth/grant-password/*`, opaque token flow shared with this one): [../authentication/guide.md](../authentication/guide.md)
 - Sessions feature (Redis-backed browser sessions — the cookie flow this Bearer flow does not use): [../sessions/guide.md](../sessions/guide.md)
 - OAuth2 password grant feature (owns the refresh/revocation machinery and the shared Redis storage): [../oauth2-password/guide.md](../oauth2-password/guide.md)
-- JWT dependency: `github.com/golang-jwt/jwt v3.2.2+incompatible` (see [../../go.mod](../../go.mod))
+- JWT dependency: `github.com/golang-jwt/jwt/v5` (see [../../go.mod](../../go.mod))

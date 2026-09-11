@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-bolo/bolo"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -29,7 +29,7 @@ type AccessClaims struct {
 	Roles   []string `json:"roles,omitempty"`
 	Active  bool     `json:"active"`
 	Blocked bool     `json:"blocked"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 // GenerateAccessToken emite o access JWT HS256: claims iss/aud/sub/jti/iat/
@@ -43,13 +43,13 @@ func GenerateAccessToken(cfg *Config, u bolo.UserInterface) (accessToken string,
 		Roles:   u.GetRoles(),
 		Active:  u.IsActive(),
 		Blocked: u.IsBlocked(),
-		StandardClaims: jwt.StandardClaims{
-			Audience:  cfg.Audience,
-			ExpiresAt: now.Add(cfg.TTL).Unix(),
-			Id:        uuid.New().String(),
-			IssuedAt:  now.Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.TTL)),
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    cfg.Issuer,
-			NotBefore: now.Unix(),
+			NotBefore: jwt.NewNumericDate(now),
 			Subject:   u.GetID(),
 		},
 	}
@@ -67,12 +67,11 @@ func GenerateAccessToken(cfg *Config, u bolo.UserInterface) (accessToken string,
 
 // jwtParser pina HS256 (ValidMethods rejeita alg:none e qualquer troca de
 // algoritmo) e desliga a validação automática de claims — exp/nbf/iat são
-// validados em ValidateAccessToken com o leeway configurado (a golang-jwt
-// v3 não tem suporte nativo a leeway).
-var jwtParser = &jwt.Parser{
-	ValidMethods:         []string{jwt.SigningMethodHS256.Alg()},
-	SkipClaimsValidation: true,
-}
+// validados em ValidateAccessToken com o leeway configurado.
+var jwtParser = jwt.NewParser(
+	jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	jwt.WithoutClaimsValidation(),
+)
 
 // ValidateAccessToken valida criptográfica e semanticamente o access JWT:
 // assinatura HS256 com o secret configurado, kid conhecido, iss/aud
@@ -106,7 +105,9 @@ func ValidateAccessToken(cfg *Config, tokenString string) (*AccessClaims, error)
 		return nil, fmt.Errorf("issuer inválido")
 	}
 
-	if claims.Audience != cfg.Audience {
+	// aud precisa ser exatamente a configurada: um único valor (fail-closed
+	// para array com múltiplas audiences)
+	if len(claims.Audience) != 1 || claims.Audience[0] != cfg.Audience {
 		return nil, fmt.Errorf("audience inválida")
 	}
 
@@ -118,20 +119,20 @@ func ValidateAccessToken(cfg *Config, tokenString string) (*AccessClaims, error)
 		return nil, fmt.Errorf("subject não é um userID válido")
 	}
 
-	if claims.Id == "" {
+	if claims.ID == "" {
 		return nil, fmt.Errorf("jti vazio")
 	}
 
-	// exp vazio/zero cai em 1970 e rejeita (fail-closed)
-	if !now.Before(time.Unix(claims.ExpiresAt, 0).Add(cfg.Leeway)) {
+	// exp ausente (nil) ou no passado além do leeway rejeita (fail-closed)
+	if claims.ExpiresAt == nil || !now.Before(claims.ExpiresAt.Add(cfg.Leeway)) {
 		return nil, ErrTokenExpired
 	}
 
-	if claims.NotBefore > 0 && time.Unix(claims.NotBefore, 0).After(now.Add(cfg.Leeway)) {
+	if claims.NotBefore != nil && claims.NotBefore.After(now.Add(cfg.Leeway)) {
 		return nil, fmt.Errorf("token ainda não é válido (nbf)")
 	}
 
-	if claims.IssuedAt > 0 && time.Unix(claims.IssuedAt, 0).After(now.Add(cfg.Leeway)) {
+	if claims.IssuedAt != nil && claims.IssuedAt.After(now.Add(cfg.Leeway)) {
 		return nil, fmt.Errorf("token emitido no futuro (iat)")
 	}
 
