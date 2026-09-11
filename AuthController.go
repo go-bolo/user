@@ -139,10 +139,35 @@ func (ctl *AuthController) Signup(c echo.Context) error {
 	return c.JSON(http.StatusOK, SignupResponse{User: &userRecord})
 }
 
+// LogoutRequestBody corpo opcional do logout: permite revogar também o
+// refresh token da sessão.
+type LogoutRequestBody struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 // Logout handler with supports to unAuthenticate from all strategies
 // TODO! add support for unauthenticate from all session strategies with events
 func (ctl *AuthController) Logout(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
+
+	// Revoga o refresh token da sessão quando enviado via header ou body.
+	// Best-effort: falha de revogação apenas loga e a resposta segue 200.
+	refreshToken := c.Request().Header.Get("X-Refresh-Token")
+	if refreshToken == "" {
+		var body LogoutRequestBody
+		// tolera GET sem body / bind falhando silenciosamente
+		if err := c.Bind(&body); err == nil {
+			refreshToken = body.RefreshToken
+		}
+	}
+
+	if refreshToken != "" {
+		if err := auth_oauth2_password.RevokeByRefreshToken(refreshToken); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+			}).Error("AuthController.Logout error on revoke refresh token")
+		}
+	}
 
 	authorizationToken := c.Request().Header.Get("Authorization")
 
@@ -150,16 +175,14 @@ func (ctl *AuthController) Logout(c echo.Context) error {
 		return c.JSON(http.StatusOK, bolo.EmptyResponse{})
 	}
 
-	if authorizationToken != "" {
-		// remove the token
-		token := auth_oauth2_password.GetOauth2TokenFromAuthorization(authorizationToken)
-		if token != "" {
-			err := auth_oauth2_password.DeleteAccessToken(ctx, token)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"error": err,
-				}).Error("AuthController.Logout error on delete access token")
-			}
+	// remove the token
+	token := auth_oauth2_password.GetOauth2TokenFromAuthorization(authorizationToken)
+	if token != "" {
+		err := auth_oauth2_password.DeleteAccessToken(ctx, token)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+			}).Error("AuthController.Logout error on delete access token")
 		}
 	}
 

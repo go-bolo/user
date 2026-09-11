@@ -430,6 +430,26 @@ func (ctl *Controller) UpdateUserRoles(c echo.Context) error {
 	userID := c.Param("userID")
 	ctx := c.(*bolo.RequestContext)
 
+	// Troca de roles é operação administrativa: exige usuário autenticado com
+	// a permissão manage_users. Sem isso a rota fica acessível anonimamente
+	// (o framework não enforce Route.Permission), permitindo escalada de
+	// privilégio — ainda mais perigosa com roles carregadas do claim JWT.
+	if !ctx.IsAuthenticated {
+		return &bolo.HTTPError{
+			Code:     http.StatusUnauthorized,
+			Message:  "Unauthorized",
+			Internal: errors.New("UpdateUserRoles unauthorized"),
+		}
+	}
+
+	if !ctx.Can("manage_users") {
+		return &bolo.HTTPError{
+			Code:     http.StatusForbidden,
+			Message:  "Forbidden",
+			Internal: errors.New("UpdateUserRoles forbidden"),
+		}
+	}
+
 	var user user_models.UserModel
 	err := user_models.UserFindOne(userID, &user)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/go-bolo/bolo"
 	user_models "github.com/go-bolo/user/models"
 	user_oauth2_password "github.com/go-bolo/user/oauth2_password"
@@ -132,10 +132,10 @@ type SuccessResponse struct {
 }
 
 // Claims is  a struct that will be encoded to a JWT.
-// jwt.StandardClaims is an embedded type to provide expiry time
+// jwt.RegisteredClaims is an embedded type to provide expiry time
 type Claims struct {
 	Email string
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 // UserDetails is struct used for user details

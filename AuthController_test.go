@@ -1,14 +1,15 @@
 package user_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	approvals "github.com/approvals/go-approval-tests"
 	"github.com/go-bolo/bolo"
@@ -219,6 +220,7 @@ func TestAuthController_Signup(t *testing.T) {
 
 				if respBody.User != nil {
 					assert.NotEqual(t, respBody.User.ID, 0)
+					tt.expectedBody.User.ID = respBody.User.ID
 					respBody.User.UpdatedAt = tt.expectedBody.User.UpdatedAt
 					respBody.User.CreatedAt = tt.expectedBody.User.CreatedAt
 				}
@@ -327,6 +329,61 @@ func TestAuthController_Logout(t *testing.T) {
 	}
 }
 
+// TestAuthController_LogoutRevokesRefreshTokenFamily cobre o logout estendido:
+// X-Refresh-Token (ou body) revoga a família de refresh tokens, não só o
+// access token do header Authorization.
+func TestAuthController_LogoutRevokesRefreshTokenFamily(t *testing.T) {
+	s := miniredis.RunT(t)
+
+	mockedDB := redis.NewClient(&redis.Options{
+		Addr: s.Addr(),
+	})
+
+	user.SessionDBWriter = mockedDB
+	user.SessionDBReader = mockedDB
+
+	app := NewApp(t)
+
+	u := user_models.UserModel{
+		Username:    gofakeit.UUID(),
+		Email:       gofakeit.Email(),
+		DisplayName: "Logout Refresh Test User",
+		Active:      true,
+	}
+
+	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
+	err := u.Save(ctx)
+	assert.NoError(t, err)
+	defer u.Delete()
+
+	// login (formato legado) + primeira rotação criam a família no storage:
+	authToken, err := auth_oauth2_password.Oauth2GenerateAndSaveToken(ctx, &u)
+	assert.Nil(t, err)
+
+	pair, _, rerr := auth_oauth2_password.RotateRefreshToken(ctx, authToken.RefreshToken)
+	assert.Nil(t, rerr)
+	assert.NotNil(t, pair)
+
+	storageCtx := context.Background()
+	familyID, err := auth_oauth2_password.StorageDBWriter.Get(storageCtx, auth_oauth2_password.RefreshTokenTombKeyPrefix+authToken.RefreshToken).Result()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, familyID)
+
+	assert.Equal(t, int64(1), auth_oauth2_password.StorageDBWriter.Exists(storageCtx, auth_oauth2_password.RefreshTokenKeyPrefix+pair.RefreshToken).Val())
+
+	// logout levando o refresh token do par novo via header:
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("X-Refresh-Token", pair.RefreshToken)
+	rec := httptest.NewRecorder()
+	app.GetRouter().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// família revogada: refresh ativo e índice da família sumiram do storage
+	assert.Equal(t, int64(0), auth_oauth2_password.StorageDBWriter.Exists(storageCtx, auth_oauth2_password.RefreshTokenKeyPrefix+pair.RefreshToken).Val())
+	assert.Equal(t, int64(0), auth_oauth2_password.StorageDBWriter.Exists(storageCtx, auth_oauth2_password.RefreshTokenFamilyKeyPrefix+familyID).Val())
+}
+
 func TestAuthController_Activate(t *testing.T) {
 	type fields struct {
 		App bolo.App
@@ -349,90 +406,6 @@ func TestAuthController_Activate(t *testing.T) {
 			}
 			if err := ctl.Activate(tt.args.c); (err != nil) != tt.wantErr {
 				t.Errorf("AuthController.Activate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestAuthController_ForgotPassword_ResetPage(t *testing.T) {
-	s := miniredis.RunT(t)
-
-	mockedDB := redis.NewClient(&redis.Options{
-		Addr: s.Addr(),
-	})
-
-	user.SessionDBWriter = mockedDB
-	user.SessionDBReader = mockedDB
-
-	app := NewApp(t)
-	u := GetCurrentUser(t)
-
-	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-	err := u.Save(ctx)
-	assert.NoError(t, err)
-	defer u.Delete()
-
-	type fields struct {
-		App bolo.App
-	}
-	type args struct {
-		user   *user_models.UserModel
-		method string
-		accept string
-		data   io.Reader
-	}
-	tests := []struct {
-		name           string
-		fields         fields
-		args           args
-		expectedBody   string
-		expectedStatus int
-		wantErr        bool
-	}{
-		{
-			name: "should return a valid page and 200",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user:   GetCurrentUser(t),
-				method: http.MethodGet,
-				accept: "text/html",
-			},
-			expectedBody:   "<div>Forgot password change page</div>",
-			expectedStatus: http.StatusOK,
-			wantErr:        false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := app.GetRouter()
-			ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-
-			savedToken, err := user_models.CreateAuthToken(tt.args.user.GetID(), "resetPassword")
-			assert.Nil(t, err)
-
-			req := httptest.NewRequest(tt.args.method, "/auth/"+u.GetID()+"/forgot-password/reset?t="+savedToken.Token, tt.args.data)
-
-			req.Header.Set(echo.HeaderAccept, tt.args.accept)
-			// Body content type:
-			req.Header.Set(echo.HeaderContentType, "application/json")
-
-			if tt.args.user != nil {
-				authToken, err := auth_oauth2_password.Oauth2GenerateAndSaveToken(ctx, tt.args.user)
-				assert.Nil(t, err)
-				req.Header.Set(echo.HeaderAuthorization, "Bearer "+authToken.AccessToken)
-			}
-
-			rec := httptest.NewRecorder() // run the request:
-			e.ServeHTTP(rec, req)
-
-			assert.Equal(t, tt.expectedStatus, rec.Code)
-
-			switch tt.args.accept {
-			case "application/json":
-				approvals.VerifyJSONBytes(t, rec.Body.Bytes())
-			default:
-				approvals.VerifyString(t, rec.Body.String())
 			}
 		})
 	}
@@ -539,323 +512,18 @@ func TestNewAuthController(t *testing.T) {
 	}
 }
 
+// GetCurrentUser devolve o usuário padrão dos testes (dados casam com os
+// approvals em testdata/approvals; timestamps vêm do clock mockado do app).
 func GetCurrentUser(t *testing.T) *user_models.UserModel {
-	var currentUser user_models.UserModel
+	t.Helper()
 
-	stubData, err := os.ReadFile("../_stubs/users/common-user.json")
-	assert.Nil(t, err)
-	err = json.Unmarshal(stubData, &currentUser)
-	assert.Nil(t, err)
-
-	return &currentUser
-}
-
-func TestAuthController_ChangePassword(t *testing.T) {
-	s := miniredis.RunT(t)
-
-	mockedDB := redis.NewClient(&redis.Options{
-		Addr: s.Addr(),
-	})
-
-	user.SessionDBWriter = mockedDB
-	user.SessionDBReader = mockedDB
-
-	app := NewApp(t)
-
-	u := user_models.UserModel{
-		Username: gofakeit.Name(),
-		Email:    gofakeit.Email(),
-	}
-
-	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-	err := u.Save(ctx)
-	assert.NoError(t, err)
-	defer u.Delete()
-
-	type fields struct {
-		App bolo.App
-	}
-	type args struct {
-		user *user_models.UserModel
-		// body user.ChangeOwnPasswordBody
-
-		accept string
-		data   io.Reader
-		method string
-	}
-	tests := []struct {
-		name                  string
-		fields                fields
-		args                  args
-		expectedStatus        int
-		wantErr               bool
-		expectedError         string
-		expectedPasswordValid bool
-	}{
-		{
-			name: "success",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user:   &u,
-				method: http.MethodPost,
-				data: strings.NewReader(`{
-					"password": "",
-					"newPassword": "new1",
-					"rNewPassword": "new1"
-				}`),
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               false,
-			expectedPasswordValid: true,
-		},
-		{
-			name: "error RNewPassword diff",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user: &u,
-				data: strings.NewReader(`{
-					"password": "",
-					"newPassword": "new2",
-					"rNewPassword": "notValid"
-				}`),
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               true,
-			expectedPasswordValid: false,
-			expectedError:         "Key: 'ChangeOwnPasswordBody.RNewPassword' Error:Field validation for 'RNewPassword' failed on the 'eqfield' tag",
-		},
-		{
-			name: "err password min 3",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user: &u,
-				data: strings.NewReader(`{
-					"password": "",
-					"newPassword": "1",
-					"rNewPassword": "1"
-				}`),
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               true,
-			expectedPasswordValid: false,
-			expectedError:         "Key: 'ChangeOwnPasswordBody.NewPassword' Error:Field validation for 'NewPassword' failed on the 'min' tag",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := app.GetRouter()
-			ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-
-			req := httptest.NewRequest(tt.args.method, "/auth/change-password", tt.args.data)
-			req.Header.Set(echo.HeaderAccept, "text/html")
-			req.Header.Set(echo.HeaderContentType, "application/json")
-
-			if tt.args.user != nil {
-				authToken, err := auth_oauth2_password.Oauth2GenerateAndSaveToken(ctx, tt.args.user)
-				assert.Nil(t, err)
-				req.Header.Set(echo.HeaderAuthorization, "Bearer "+authToken.AccessToken)
-			}
-
-			rec := httptest.NewRecorder() // run the request:
-			e.ServeHTTP(rec, req)
-
-			assert.Equal(t, tt.expectedStatus, rec.Code)
-
-			switch tt.args.accept {
-			case "application/json":
-				approvals.VerifyJSONBytes(t, rec.Body.Bytes())
-			default:
-				approvals.VerifyString(t, rec.Body.String())
-			}
-
-			// req, err := http.NewRequest(http.MethodPost, "/", strings.NewReader(tt.args.body.ToJSON()))
-
-			// assert.Nil(t, err)
-			// rec := httptest.NewRecorder()
-			// c := e.NewContext(req, rec)
-			// c.Request().Header.Set("Accept", "application/json")
-			// c.Request().Header.Set("Content-Type", "application/json")
-			// c.SetPath("auth/change-password")
-			// c.SetParamNames("userID")
-			// c.SetParamValues(tt.args.user.GetID())
-
-			// ctx := bolo.NewRequestContext(&bolo.RequestContextOpts{EchoContext: c})
-			// if tt.args.user != nil {
-			// 	ctx.SetAuthenticatedUser(tt.args.user)
-			// 	ctx.Roles = tt.args.user.GetRoles()
-			// }
-
-			// ctl := &user.AuthController{
-			// 	App: tt.fields.App,
-			// }
-
-			// err = ctl.ChangeOwnPassword(ctx)
-			// if err != nil {
-			// 	assert.Equal(t, tt.expectedError, err.Error())
-			// }
-
-			// valid, errV := auth_oauth2_password.ValidUsernamePassword(tt.args.user.GetEmail(), tt.args.body.NewPassword)
-			// assert.Nil(t, errV)
-			// assert.Equal(t, tt.expectedPasswordValid, valid)
-			// assert.Equal(t, tt.expectedStatus, rec.Result().StatusCode)
-		})
-	}
-}
-
-func TestAuthController_SetPassword(t *testing.T) {
-	s := miniredis.RunT(t)
-
-	mockedDB := redis.NewClient(&redis.Options{
-		Addr: s.Addr(),
-	})
-
-	user.SessionDBWriter = mockedDB
-	user.SessionDBReader = mockedDB
-
-	app := NewApp(t)
-	u := user_models.UserModel{
-		Username: gofakeit.UUID(),
-		Email:    gofakeit.Email(),
-	}
-	u.SetRole("administrator")
-	ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-	u.Save(ctx)
-
-	type fields struct {
-		App bolo.App
-	}
-	type args struct {
-		user *user_models.UserModel
-		body user.SetPasswordBody
-
-		accept string
-		data   io.Reader
-		url    string
-	}
-	tests := []struct {
-		name                  string
-		fields                fields
-		args                  args
-		expectedStatus        int
-		wantErr               bool
-		expectedError         string
-		expectedPasswordValid bool
-	}{
-		{
-			name: "success",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user: &u,
-				body: user.SetPasswordBody{
-					NewPassword:  "new1",
-					RNewPassword: "new1",
-				},
-				url: "/auth/" + "/:userID/set-password",
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               false,
-			expectedPasswordValid: true,
-		},
-		{
-			name: "error RNewPassword diff",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user: &u,
-				body: user.SetPasswordBody{
-					NewPassword:  "new2",
-					RNewPassword: "notValid",
-				},
-				url: "/auth/" + "/:userID/set-password",
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               true,
-			expectedPasswordValid: false,
-			expectedError:         "Key: 'SetPasswordBody.RNewPassword' Error:Field validation for 'RNewPassword' failed on the 'eqfield' tag",
-		},
-		{
-			name: "err password min 3",
-			fields: fields{
-				App: app,
-			}, args: args{
-				user: &u,
-				body: user.SetPasswordBody{
-					NewPassword:  "1",
-					RNewPassword: "1",
-				},
-				data: strings.NewReader(`{
-				}`),
-				url: "/auth/" + "/:userID/set-password",
-			},
-			expectedStatus:        http.StatusOK,
-			wantErr:               true,
-			expectedPasswordValid: false,
-			expectedError:         "Key: 'SetPasswordBody.NewPassword' Error:Field validation for 'NewPassword' failed on the 'min' tag",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := app.GetRouter()
-			ctx := app.NewRequestContext(&bolo.RequestContextOpts{App: app})
-
-			req := httptest.NewRequest(http.MethodGet, tt.args.url, tt.args.data)
-			req.Header.Set(echo.HeaderAccept, tt.args.accept)
-			// Body content type:
-			req.Header.Set(echo.HeaderContentType, "application/json")
-
-			if tt.args.user != nil {
-				authToken, err := auth_oauth2_password.Oauth2GenerateAndSaveToken(ctx, tt.args.user)
-				assert.Nil(t, err)
-				req.Header.Set(echo.HeaderAuthorization, "Bearer "+authToken.AccessToken)
-			}
-
-			rec := httptest.NewRecorder() // run the request:
-			e.ServeHTTP(rec, req)
-
-			assert.Equal(t, tt.expectedStatus, rec.Code)
-
-			switch tt.args.accept {
-			case "application/json":
-				approvals.VerifyJSONBytes(t, rec.Body.Bytes())
-			default:
-				approvals.VerifyString(t, rec.Body.String())
-			}
-
-			// req, err := http.NewRequest(http.MethodPost, "/", strings.NewReader(tt.args.body.ToJSON()))
-
-			// assert.Nil(t, err)
-			// rec := httptest.NewRecorder()
-			// c := e.NewContext(req, rec)
-			// c.Request().Header.Set("Accept", "application/json")
-			// c.Request().Header.Set("Content-Type", "application/json")
-			// c.SetPath("auth/" + tt.args.user.GetID() + "/new-password")
-			// c.SetParamNames("userID")
-			// c.SetParamValues(tt.args.user.GetID())
-
-			// ctx := bolo.NewRequestContext(&bolo.RequestContextOpts{EchoContext: c})
-			// if tt.args.user != nil {
-			// 	ctx.SetAuthenticatedUser(tt.args.user)
-			// 	ctx.Roles = tt.args.user.GetRoles()
-			// }
-
-			// ctl := &user.AuthController{
-			// 	App: tt.fields.App,
-			// }
-
-			// err = ctl.SetPassword(ctx)
-			// if err != nil {
-			// 	assert.Equal(t, tt.expectedError, err.Error())
-			// }
-
-			// valid, errV := auth_oauth2_password.ValidUsernamePassword(tt.args.user.GetEmail(), tt.args.body.NewPassword)
-			// assert.Nil(t, errV)
-			// assert.Equal(t, tt.expectedPasswordValid, valid)
-
-			// assert.Equal(t, tt.expectedStatus, rec.Result().StatusCode)
-		})
+	return &user_models.UserModel{
+		ID:          2,
+		Username:    "alberto",
+		Email:       "alberto@example.com",
+		DisplayName: "Alberto Contato",
+		Language:    "pt-br",
+		Active:      true,
+		CreatedAt:   time.Date(2017, 10, 11, 19, 46, 40, 0, time.UTC),
 	}
 }

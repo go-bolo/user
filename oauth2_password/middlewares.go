@@ -5,7 +5,7 @@ import "github.com/labstack/echo/v4"
 func oauth2AuthenticationMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if isPublicRoute(c.Path()) {
+			if IsPublicRoute(c.Path()) {
 				return next(c)
 			}
 
