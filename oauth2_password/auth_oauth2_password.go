@@ -50,9 +50,17 @@ func oauth2TokenAuthentication(c echo.Context) error {
 		return nil
 	}
 
+	strict401 := Strict401Enabled(ctx.App.GetConfiguration())
+
 	strData, err := GetAccessToken(token)
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
+			if strict401 {
+				// token inexistente no redis (expirado/revogado): responde 401
+				// explícito em vez de seguir anônimo
+				return newUnauthorizedTokenHTTPError(c, "token expired")
+			}
+
 			return nil
 		}
 
@@ -85,10 +93,15 @@ func oauth2TokenAuthentication(c echo.Context) error {
 	}
 
 	if !data.IsValid() {
-		return &echo.HTTPError{
-			Code:    403,
-			Message: errors.New("token expired"),
+		if strict401 {
+			return newUnauthorizedTokenHTTPError(c, "token expired")
 		}
+
+		// Não-strict: token expirado segue anônimo, como a chave inexistente
+		// acima. 403 fica reservado para inativo/bloqueado — o frontend trata
+		// qualquer 403 como sinal definitivo de sessão inválida e um token
+		// expirado nessa janela deslogaria o usuário sem tentar o refresh.
+		return nil
 	}
 
 	// get user from DB:

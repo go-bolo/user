@@ -1,6 +1,11 @@
 package user_oauth2_password
 
-import "fmt"
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+)
 
 type ForbiddenHTTPError struct {
 	Code         int         `json:"code"`
@@ -43,4 +48,29 @@ func (e *ForbiddenHTTPError) GetInternal() error {
 func (e *ForbiddenHTTPError) SetInternal(internal error) error {
 	e.Internal = internal
 	return nil
+}
+
+// UnauthorizedHTTPError é o erro do modo strict 401: token Bearer
+// inexistente/expirado responde 401 com header WWW-Authenticate (RFC 6750) e
+// corpo no formato BaseErrorResponse. Embute ForbiddenHTTPError para não
+// duplicar o contrato de corpo/JSON (mesma forma serializada; apenas a
+// semântica do código difere — 401 via factory abaixo).
+type UnauthorizedHTTPError struct {
+	ForbiddenHTTPError
+}
+
+// newUnauthorizedTokenHTTPError monta o 401 do modo strict: registra o header
+// WWW-Authenticate na resposta e devolve o erro compatível com o handler do
+// bolo (que renderiza o corpo no formato BaseErrorResponse para JSON).
+func newUnauthorizedTokenHTTPError(c echo.Context, description string) error {
+	c.Response().Header().Set(echo.HeaderWWWAuthenticate, fmt.Sprintf(`Bearer error="invalid_token", error_description="%s"`, description))
+
+	return &UnauthorizedHTTPError{
+		ForbiddenHTTPError: ForbiddenHTTPError{
+			Code:         http.StatusUnauthorized,
+			Message:      description,
+			ErrorMessage: "invalid_token",
+			ErrorContext: "authentication",
+		},
+	}
 }
