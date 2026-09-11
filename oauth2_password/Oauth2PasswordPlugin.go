@@ -20,7 +20,7 @@ func (p *Oauth2PasswordPlugin) Init(app bolo.App) error {
 	logrus.Debug(p.GetName() + ".Init Running")
 
 	app.GetEvents().On("configuration", event.ListenerFunc(func(e event.Event) error {
-		initStorage(app)
+		InitStorage(app)
 		return nil
 	}), event.Normal)
 

@@ -20,8 +20,8 @@ var (
 	StorageDBReader *redis.Client
 )
 
-// initStorage - Start the redis cache connection
-func initStorage(app bolo.App) {
+// InitStorage - Start the redis cache connection
+func InitStorage(app bolo.App) {
 	if !storageInitialized {
 		cfgs := app.GetConfiguration()
 

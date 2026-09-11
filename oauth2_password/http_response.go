@@ -59,10 +59,10 @@ type UnauthorizedHTTPError struct {
 	ForbiddenHTTPError
 }
 
-// newUnauthorizedTokenHTTPError monta o 401 do modo strict: registra o header
+// NewUnauthorizedTokenHTTPError monta o 401 do modo strict: registra o header
 // WWW-Authenticate na resposta e devolve o erro compatível com o handler do
 // bolo (que renderiza o corpo no formato BaseErrorResponse para JSON).
-func newUnauthorizedTokenHTTPError(c echo.Context, description string) error {
+func NewUnauthorizedTokenHTTPError(c echo.Context, description string) error {
 	c.Response().Header().Set(echo.HeaderWWWAuthenticate, fmt.Sprintf(`Bearer error="invalid_token", error_description="%s"`, description))
 
 	return &UnauthorizedHTTPError{

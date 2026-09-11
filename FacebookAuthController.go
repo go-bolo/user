@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt"
 	"github.com/go-bolo/bolo"
 	user_models "github.com/go-bolo/user/models"
 	user_oauth2_password "github.com/go-bolo/user/oauth2_password"

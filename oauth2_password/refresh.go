@@ -200,8 +200,15 @@ func getTombstoneFamily(refreshToken string) (string, error) {
 	return familyID, nil
 }
 
-// RotateRefreshToken troca um refresh token válido por um par novo, com
-// rotação single-use e graça de reuso idempotente:
+// RotateRefreshToken troca um refresh token válido por um par novo (formato
+// opaco legado), com rotação single-use e graça de reuso idempotente.
+// Veja RotateRefreshTokenWithFormat para a semântica completa.
+func RotateRefreshToken(c echo.Context, refreshToken string) (*TokenPair, *user_models.UserModel, *RefreshError) {
+	return RotateRefreshTokenWithFormat(c, refreshToken, FormatOpaque)
+}
+
+// RotateRefreshTokenWithFormat troca um refresh token válido por um par novo
+// no formato pedido, com rotação single-use e graça de reuso idempotente:
 //
 //  1. RTUSED hit (dentro da graça) => devolve o MESMO par já emitido,
 //     sem nova rotação (a aba que perdeu a corrida também recebe 200);
@@ -213,9 +220,14 @@ func getTombstoneFamily(refreshToken string) (string, error) {
 //     retorna ErrReuseDetected); sem tombstone é sessão vencida por idle
 //     (ErrExpiredIdle).
 //
+// Com FormatJWT o access novo é um JWT stateless (não gravado no Redis); o
+// par publicado na graça (RTUSED) carrega a string JWT sem alteração, então
+// o replay dentro da graça devolve o MESMO JWT. O refresh token do par é
+// sempre opaco — a string de acesso é transparente para graça/famílias.
+//
 // Erros de infra (Redis fora, dados corrompidos, config inválida) vêm com
 // Kind ErrInternal e NÃO revogam nada — o chamador decide o 500.
-func RotateRefreshToken(c echo.Context, refreshToken string) (*TokenPair, *user_models.UserModel, *RefreshError) {
+func RotateRefreshTokenWithFormat(c echo.Context, refreshToken string, format AccessTokenFormat) (*TokenPair, *user_models.UserModel, *RefreshError) {
 	reqCtx, ok := c.(*bolo.RequestContext)
 	if !ok {
 		return nil, nil, refreshInternalError(errors.New("RotateRefreshToken requires a *bolo.RequestContext"))
@@ -264,7 +276,7 @@ func RotateRefreshToken(c echo.Context, refreshToken string) (*TokenPair, *user_
 			return nil, nil, refreshInternalError(err)
 		}
 
-		return rotateClaimedRecord(reqCtx, &record, refreshToken, RefreshTokenKeyPrefix+refreshToken, claimedJSON, now, idleTTL, graceTTL)
+		return rotateClaimedRecord(reqCtx, &record, refreshToken, RefreshTokenKeyPrefix+refreshToken, claimedJSON, now, idleTTL, graceTTL, format)
 	}
 
 	// 3. claim legado (chave sem prefixo): sem deadline conhecida, a família
@@ -287,7 +299,7 @@ func RotateRefreshToken(c echo.Context, refreshToken string) (*TokenPair, *user_
 			AbsoluteDeadline: now.Add(absoluteTTL),
 		}
 
-		return rotateClaimedRecord(reqCtx, record, refreshToken, refreshTokenPrefix+refreshToken, legacyJSON, now, idleTTL, graceTTL)
+		return rotateClaimedRecord(reqCtx, record, refreshToken, refreshTokenPrefix+refreshToken, legacyJSON, now, idleTTL, graceTTL, format)
 	}
 
 	// 4. Miss nas claims: ou o token nunca existiu/expirou, ou outra
@@ -382,8 +394,8 @@ func getDelClaim(key string) (string, error) {
 // chave ao storage (best-effort) para que retries do mesmo token produzam o
 // mesmo resultado em vez de "sessão expirada". Erros que JÁ revogaram a
 // família (teto absoluto) não restauram nada — a revogação prevalece.
-func rotateClaimedRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refreshToken, claimedKey, claimedJSON string, now time.Time, idleTTL, graceTTL time.Duration) (*TokenPair, *user_models.UserModel, *RefreshError) {
-	pair, user, rerr := rotateRecord(reqCtx, record, refreshToken, now, idleTTL, graceTTL)
+func rotateClaimedRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refreshToken, claimedKey, claimedJSON string, now time.Time, idleTTL, graceTTL time.Duration, format AccessTokenFormat) (*TokenPair, *user_models.UserModel, *RefreshError) {
+	pair, user, rerr := rotateRecord(reqCtx, record, refreshToken, now, idleTTL, graceTTL, format)
 	if rerr != nil && (rerr.Kind == ErrInternal || rerr.Kind == ErrUserInvalid) {
 		if err := StorageDBWriter.Set(ctx, claimedKey, claimedJSON, idleTTL).Err(); err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -399,7 +411,7 @@ func rotateClaimedRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord
 // de chaves da rotação. O token antigo já foi consumido pela claim atômica
 // (GETDEL) do chamador; refreshToken é usado apenas como membro do índice da
 // família e das chaves de graça/tombstone.
-func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refreshToken string, now time.Time, idleTTL, graceTTL time.Duration) (*TokenPair, *user_models.UserModel, *RefreshError) {
+func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refreshToken string, now time.Time, idleTTL, graceTTL time.Duration, format AccessTokenFormat) (*TokenPair, *user_models.UserModel, *RefreshError) {
 	// teto absoluto vencido: família inteira é encerrada (>= garante que o
 	// restante do prazo usado nos TTLs abaixo é sempre positivo)
 	if !now.Before(record.AbsoluteDeadline) {
@@ -429,17 +441,14 @@ func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refre
 		return nil, userRecord, &RefreshError{Kind: ErrUserInvalid}
 	}
 
-	// gera o par novo (access token já usa o TTL configurado)
-	data, err := Oauth2GenerateToken(reqCtx, userRecord)
+	// gera o par novo no formato pedido (access token já usa o TTL
+	// configurado; no formato JWT nada é gravado para o access)
+	accessToken, expiresIn, err := generateAccessTokenForFormat(reqCtx, userRecord, format)
 	if err != nil {
 		return nil, nil, refreshInternalError(err)
 	}
 
-	dataJSON, _ := json.MarshalIndent(data, "", "  ")
-
-	if err := SetAccessToken(reqCtx, data.AccessToken, string(dataJSON)); err != nil {
-		return nil, nil, refreshInternalError(err)
-	}
+	newRefreshToken := generateRefreshToken()
 
 	remainingAbsolute := record.AbsoluteDeadline.Sub(now)
 
@@ -456,14 +465,14 @@ func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refre
 	}
 
 	// refresh token novo com TTL idle (renovado a cada rotação)
-	if err := StorageDBWriter.Set(ctx, RefreshTokenKeyPrefix+data.RefreshToken, string(recordJSON), idleTTL).Err(); err != nil {
+	if err := StorageDBWriter.Set(ctx, RefreshTokenKeyPrefix+newRefreshToken, string(recordJSON), idleTTL).Err(); err != nil {
 		return nil, nil, refreshInternalError(err)
 	}
 
 	// família indexa os tokens envolvidos (velho + novo) com TTL do restante
 	// do teto absoluto
 	familyKey := RefreshTokenFamilyKeyPrefix + record.FamilyID
-	if err := StorageDBWriter.SAdd(ctx, familyKey, refreshToken, data.RefreshToken).Err(); err != nil {
+	if err := StorageDBWriter.SAdd(ctx, familyKey, refreshToken, newRefreshToken).Err(); err != nil {
 		return nil, nil, refreshInternalError(err)
 	}
 
@@ -473,9 +482,9 @@ func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refre
 
 	used := refreshUsedRecord{
 		TokenPair: TokenPair{
-			AccessToken:  data.AccessToken,
-			RefreshToken: data.RefreshToken,
-			ExpiresIn:    data.ExpiresIn,
+			AccessToken:  accessToken,
+			RefreshToken: newRefreshToken,
+			ExpiresIn:    expiresIn,
 		},
 		OwnerID: record.OwnerID,
 	}
@@ -496,9 +505,9 @@ func rotateRecord(reqCtx *bolo.RequestContext, record *RefreshTokenRecord, refre
 	}
 
 	pair := TokenPair{
-		AccessToken:  data.AccessToken,
-		RefreshToken: data.RefreshToken,
-		ExpiresIn:    data.ExpiresIn,
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
+		ExpiresIn:    expiresIn,
 	}
 
 	return &pair, userRecord, nil

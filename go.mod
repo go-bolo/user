@@ -6,7 +6,6 @@ require (
 	github.com/alicebob/miniredis/v2 v2.31.0
 	github.com/approvals/go-approval-tests v0.0.0-20220530063708-32d5677069bd
 	github.com/brianvoe/gofakeit/v6 v6.14.5
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/go-bolo/bolo v1.1.5
 	github.com/go-bolo/clock v0.0.3
 	github.com/go-bolo/emails v0.1.0
@@ -14,6 +13,7 @@ require (
 	github.com/go-bolo/system_settings v1.0.1
 	github.com/go-playground/validator/v10 v10.17.0
 	github.com/go-redis/redismock/v9 v9.2.0
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/gookit/event v1.1.2
 	github.com/gorilla/sessions v1.2.1
@@ -51,7 +51,6 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/securecookie v1.1.1 // indirect

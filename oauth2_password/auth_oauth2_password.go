@@ -20,7 +20,7 @@ import (
 
 var ctx = context.Background()
 
-func isPublicRoute(url string) bool {
+func IsPublicRoute(url string) bool {
 	return strings.HasPrefix(url, "/health") || strings.HasPrefix(url, "/public")
 }
 
@@ -37,6 +37,14 @@ func HandleRequestAuthentication(c echo.Context) error {
 func oauth2TokenAuthentication(c echo.Context) error {
 	ctx := c.(*bolo.RequestContext)
 	var err error
+
+	// Guard: request já autenticada pelo middleware JWT do subplugin
+	// oauth2_jwt (Bearer JWT válido validado criptograficamente). O access
+	// JWT não existe no Redis: sem este early return o miss abaixo viraria
+	// 401 falso quando OAUTH2_STRICT_401=true.
+	if v, ok := c.Get("auth.jwt").(bool); ok && v {
+		return nil
+	}
 
 	authorizationToken := c.Request().Header.Get("Authorization")
 
@@ -58,7 +66,7 @@ func oauth2TokenAuthentication(c echo.Context) error {
 			if strict401 {
 				// token inexistente no redis (expirado/revogado): responde 401
 				// explícito em vez de seguir anônimo
-				return newUnauthorizedTokenHTTPError(c, "token expired")
+				return NewUnauthorizedTokenHTTPError(c, "token expired")
 			}
 
 			return nil
@@ -94,7 +102,7 @@ func oauth2TokenAuthentication(c echo.Context) error {
 
 	if !data.IsValid() {
 		if strict401 {
-			return newUnauthorizedTokenHTTPError(c, "token expired")
+			return NewUnauthorizedTokenHTTPError(c, "token expired")
 		}
 
 		// Não-strict: token expirado segue anônimo, como a chave inexistente
@@ -240,6 +248,79 @@ func Oauth2GenerateAndSaveToken(ctx *bolo.RequestContext, user bolo.UserInterfac
 	err = SetRefreshToken(ctx, data.RefreshToken, string(dataJSON))
 	if err != nil {
 		return data, err
+	}
+
+	return data, nil
+}
+
+// Oauth2GenerateAndSaveTokenJWT emite o par no formato JWT: access token
+// stateless (validação criptográfica, NÃO gravado no Redis) + refresh token
+// opaco rotativo já no formato novo (RT: com família e teto absoluto desde o
+// login — a primeira rotação apenas continua a família).
+//
+// Exige o gerador JWT registrado via SetJWTAccessGenerator (feito pelo
+// subplugin oauth2_jwt no evento configuration); sem ele devolve erro
+// explícito em vez de emitir token em formato desconhecido.
+func Oauth2GenerateAndSaveTokenJWT(reqCtx *bolo.RequestContext, user bolo.UserInterface) (Oauth2TokenData, error) {
+	var data Oauth2TokenData
+
+	accessToken, expiresIn, err := generateJWTAccess(reqCtx, user)
+	if err != nil {
+		return data, err
+	}
+
+	cfgs := reqCtx.App.GetConfiguration()
+
+	idleTTL, err := RefreshIdleTTL(cfgs)
+	if err != nil {
+		return data, err
+	}
+
+	absoluteTTL, err := RefreshAbsoluteTTL(cfgs)
+	if err != nil {
+		return data, err
+	}
+
+	refreshToken := generateRefreshToken()
+
+	now := time.Now()
+
+	record := RefreshTokenRecord{
+		OwnerID:          json.Number(user.GetID()),
+		FamilyID:         uuid.New().String(),
+		CreatedAt:        now,
+		AbsoluteDeadline: now.Add(absoluteTTL),
+	}
+
+	recordJSON, err := json.Marshal(record)
+	if err != nil {
+		return data, err
+	}
+
+	// refresh token novo com TTL idle (renovado a cada rotação)
+	if err := StorageDBWriter.Set(ctx, RefreshTokenKeyPrefix+refreshToken, string(recordJSON), idleTTL).Err(); err != nil {
+		return data, err
+	}
+
+	// família nasce indexando o token inicial, com o teto absoluto de vida
+	familyKey := RefreshTokenFamilyKeyPrefix + record.FamilyID
+	if err := StorageDBWriter.SAdd(ctx, familyKey, refreshToken).Err(); err != nil {
+		return data, err
+	}
+
+	if err := StorageDBWriter.Expire(ctx, familyKey, absoluteTTL).Err(); err != nil {
+		return data, err
+	}
+
+	data = Oauth2TokenData{
+		ID:           accessToken,
+		OwnerId:      json.Number(user.GetID()),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "",
+		Scopes:       []string{},
+		ExpireDate:   now.Add(time.Duration(expiresIn) * time.Second),
+		ExpiresIn:    expiresIn,
 	}
 
 	return data, nil
