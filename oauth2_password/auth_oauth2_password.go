@@ -120,19 +120,15 @@ func oauth2TokenAuthentication(c echo.Context) error {
 	return nil
 }
 
-// Get Oauth2 token from authorization with support to use Bearer and Basic token prefix
+// GetOauth2TokenFromAuthorization extrai o token oauth2 do header
+// Authorization. Aceita SOMENTE o prefixo "Bearer": outros esquemas (ex.:
+// "Basic") não carregam um access token oauth2 e devolvem "".
 func GetOauth2TokenFromAuthorization(authorization string) string {
-	var tokenData []string
-
 	if !strings.HasPrefix(authorization, "Bearer") {
-		tokenData = strings.Split(authorization, " ")
-
+		return ""
 	}
 
-	if !strings.HasPrefix(authorization, "Basic") {
-		tokenData = strings.Split(authorization, " ")
-	}
-
+	tokenData := strings.Split(authorization, " ")
 	if len(tokenData) == 2 {
 		return strings.TrimSpace(tokenData[1])
 	}
@@ -182,20 +178,26 @@ func (r *Oauth2TokenData) IsValid() bool {
 }
 
 func Oauth2GenerateToken(ctx *bolo.RequestContext, u bolo.UserInterface) (Oauth2TokenData, error) {
+	var data Oauth2TokenData
+
 	cfgs := ctx.App.GetConfiguration()
 
 	accessToken := uuid.New().String() + helpers.RandStringBytes(35)
 	refreshToken := uuid.New().String() + helpers.RandStringBytes(35)
 
-	expiration := cfgs.GetInt64F("OAUTH2_ACCESS_TOKEN_EXPIRATION", 30)
+	// TTL configurável com unidade (OAUTH2_ACCESS_TOKEN_TTL); erro de config
+	// é explícito — não gera token com prazo errado
+	expireD, err := AccessTokenTTL(cfgs)
+	if err != nil {
+		return data, err
+	}
 
-	expireD := time.Duration(expiration) * time.Minute
 	expire := int64(expireD / time.Second)
 
 	expireDate := time.Now()
 	expireDate = expireDate.Add(expireD)
 
-	data := Oauth2TokenData{
+	data = Oauth2TokenData{
 		ID:           accessToken,
 		OwnerId:      json.Number(u.GetID()),
 		AccessToken:  accessToken,

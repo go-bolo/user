@@ -1,8 +1,6 @@
 package user_oauth2_password
 
 import (
-	"time"
-
 	"github.com/go-bolo/bolo"
 	"github.com/redis/go-redis/v9"
 )
@@ -58,11 +56,14 @@ func GetAccessToken(accessToken string) (string, error) {
 }
 
 func SetAccessToken(c *bolo.RequestContext, accessToken string, value string) error {
-	cfgs := c.App.GetConfiguration()
-	expiration := cfgs.GetInt64F("OAUTH2_ACCESS_TOKEN_EXPIRATION", 30)
+	// TTL configurável com unidade (OAUTH2_ACCESS_TOKEN_TTL); erro de config
+	// é explícito — não grava token com prazo errado
+	expire, err := AccessTokenTTL(c.App.GetConfiguration())
+	if err != nil {
+		return err
+	}
 
 	key := accessTokenPrefix + accessToken
-	expire := time.Duration(expiration) * time.Minute
 	return StorageDBWriter.Set(ctx, key, value, expire).Err()
 }
 
@@ -71,6 +72,10 @@ func DeleteAccessToken(c *bolo.RequestContext, accessToken string) error {
 	return StorageDBWriter.Del(ctx, key).Err()
 }
 
+// GetRefreshToken lê a chave legada (sem prefixo) do refresh token.
+//
+// Deprecated: o formato legado é somente leitura/migração; use
+// RotateRefreshToken/RevokeByRefreshToken, que enxergam os dois formatos.
 func GetRefreshToken(refreshToken string) (string, error) {
 	key := refreshTokenPrefix + refreshToken
 	return StorageDBReader.Get(ctx, key).Result()
@@ -78,9 +83,14 @@ func GetRefreshToken(refreshToken string) (string, error) {
 
 func SetRefreshToken(c *bolo.RequestContext, refreshToken string, value string) error {
 	cfgs := c.App.GetConfiguration()
-	expiration := cfgs.GetInt64F("OAUTH2_REFRESH_TOKEN_EXPIRATION", 3*1440)
+
+	// Mesma fonte de verdade da rotação: o login grava o refresh legado já
+	// com o TTL idle configurado (evita primeiro ciclo com prazo diferente).
+	idleTTL, err := RefreshIdleTTL(cfgs)
+	if err != nil {
+		return err
+	}
 
 	key := refreshTokenPrefix + refreshToken
-	expire := time.Duration(expiration) * time.Minute
-	return StorageDBWriter.Set(ctx, key, value, expire).Err()
+	return StorageDBWriter.Set(ctx, key, value, idleTTL).Err()
 }
