@@ -12,5 +12,4 @@ development.env
 tmp
 gcloud.json
 *.received.txt
-testdata
 .kilo
